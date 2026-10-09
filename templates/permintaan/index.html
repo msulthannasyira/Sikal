@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Permintaan Analisis - SiKal{% endblock %}
+{% block page_title %}{% if current_user.is_admin %}Permintaan Analisis Masuk{% else %}Permintaan Analisis Saya{% endif %}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .card, .card-header, .badge { border-radius: 4px !important; }
+  .card .table > :is(thead, tbody) > tr > :first-child { padding-left: 1rem; }
+  .card .table > :is(thead, tbody) > tr > :last-child  { padding-right: 1rem; }
+  .card, .card * { font-size: 14px; }
+  .card-header h6, .card-header h6 * { font-size: 1rem; }
+  #reqTable td[data-col="name"] { max-width: 320px; }
+  #reqTable td[data-col="name"] .desc {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #6c757d; font-size: 12px;
+  }
+  .status-pill { display:inline-block; min-width: 84px; text-align:center; }
+  .empty-state { padding: 3rem 1rem; text-align:center; color:#6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="min-height: 56px;">
+    <h6 class="mb-0 fw-bold">
+      {% if current_user.is_admin %}Daftar Permintaan dari Pengguna{% else %}Daftar Permintaan Anda{% endif %}
+    </h6>
+    {% if not current_user.is_admin %}
+    <a href="{{ url_for('permintaan_baru') }}" class="btn btn-sm btn-success">
+      <i class="bi bi-plus-lg me-1"></i>Ajukan Permintaan
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="card-body p-0">
+    {% if rows %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="reqTable">
+        <thead class="table-light">
+          <tr>
+            <th style="width:48px">No</th>
+            <th data-col="name">Nama Analisis</th>
+            {% if current_user.is_admin %}<th style="width:130px">Pengaju</th>{% endif %}
+            <th style="width:120px">Status</th>
+            <th style="width:150px">Tanggal</th>
+            <th style="width:200px" class="text-end">Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr data-id="{{ r.id }}">
+            <td class="text-muted">{{ loop.index }}</td>
+            <td data-col="name">
+              <div class="fw-semibold">{{ r.name }}</div>
+              {% if r.description %}<span class="desc">{{ r.description }}</span>{% endif %}
+              {% if r.status == 'rejected' and r.admin_note %}
+              <div class="text-danger small mt-1"><i class="bi bi-x-circle me-1"></i>Alasan: {{ r.admin_note }}</div>
+              {% endif %}
+              {% if r.status == 'approved' and r.kelas %}
+              <div class="small mt-1">
+                Hasil: <span class="badge {{ r.kelas|kelas_badge }}">{{ r.kelas }}</span>
+                {{ r.kelas|kelas_label }}
+              </div>
+              {% endif %}
+            </td>
+            {% if current_user.is_admin %}<td>{{ r.requester }}</td>{% endif %}
+            <td>
+              {% if r.status == 'pending' %}
+                <span class="badge bg-warning text-dark status-pill">Menunggu</span>
+              {% elif r.status == 'approved' %}
+                <span class="badge bg-success status-pill">Selesai</span>
+              {% else %}
+                <span class="badge bg-danger status-pill">Ditolak</span>
+              {% endif %}
+            </td>
+            <td><small>{{ r.created_at[:16].replace('T',' ') }}</small></td>
+            <td class="text-end">
+              <div class="d-flex gap-1 justify-content-end">
+                {% if r.status == 'approved' and r.result_id %}
+                <a href="{{ url_for('informasi_detail', result_id=r.result_id) }}"
+                   class="btn btn-sm btn-outline-secondary" title="Lihat Hasil">
+                  <i class="bi bi-eye me-1"></i>Lihat Hasil
+                </a>
+                {% endif %}
+
+                {% if current_user.is_admin and r.status == 'pending' %}
+                <button class="btn btn-sm btn-success btn-analyze"
+                        data-id="{{ r.id }}" data-name="{{ r.name }}" title="Jalankan analisis">
+                  <i class="bi bi-play-fill me-1"></i>Analisis
+                </button>
+                <button class="btn btn-sm btn-outline-danger btn-reject"
+                        data-id="{{ r.id }}" data-name="{{ r.name }}" title="Tolak permintaan">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+                {% endif %}
+
+                {% if not current_user.is_admin and r.status == 'pending' %}
+                <button class="btn btn-sm btn-outline-danger btn-cancel"
+                        data-id="{{ r.id }}" data-name="{{ r.name }}" title="Batalkan permintaan">
+                  <i class="bi bi-trash3 me-1"></i>Batal
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+      {% if current_user.is_admin %}
+        Belum ada permintaan analisis dari pengguna.
+      {% else %}
+        Anda belum mengajukan permintaan analisis.
+        <div class="mt-3">
+          <a href="{{ url_for('permintaan_baru') }}" class="btn btn-sm btn-success">
+            <i class="bi bi-plus-lg me-1"></i>Ajukan Permintaan
+          </a>
+        </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Admin: jalankan analisis untuk sebuah permintaan ──────────────────
+document.querySelectorAll('.btn-analyze').forEach(btn => {
+  btn.addEventListener('click', async function () {
+    const id = this.dataset.id;
+    const name = this.dataset.name;
+    const conf = await sikalConfirm({
+      title: 'Jalankan analisis untuk permintaan ini?',
+      text: name, icon: 'question', confirmText: 'Jalankan', confirmColor: 'success'
+    });
+    if (!conf.isConfirmed) return;
+
+    Swal.fire({
+      title: 'Menganalisis…',
+      html: 'Mengambil data dari Google Earth Engine dan menghitung SAW.<br>Proses ini dapat memakan waktu beberapa saat.',
+      allowOutsideClick: false, allowEscapeKey: false,
+      width: '24rem', customClass: { popup: 'rounded-3' },
+      didOpen: () => Swal.showLoading()
+    });
+
+    try {
+      const res = await fetch(`/api/permintaan/${id}/analisis`, { method: 'POST' });
+      const data = await res.json();
+      Swal.close();
+      if (!res.ok) {
+        showNotif(data.error || 'Analisis gagal.', res.status === 400 ? 'warning' : 'danger');
+        return;
+      }
+      showNotifAfterReload('Analisis selesai. Permintaan ditandai selesai.', 'success');
+      window.location.href = '/informasi/' + data.id;
+    } catch (e) {
+      Swal.close();
+      showNotif('Koneksi gagal: ' + e.message, 'danger');
+    }
+  });
+});
+
+// ── Admin: tolak permintaan (dengan alasan opsional) ──────────────────
+document.querySelectorAll('.btn-reject').forEach(btn => {
+  btn.addEventListener('click', async function () {
+    const id = this.dataset.id;
+    const { value: note, isConfirmed } = await Swal.fire({
+      title: 'Tolak permintaan?',
+      input: 'textarea',
+      inputLabel: 'Alasan penolakan (opsional)',
+      inputPlaceholder: 'Contoh: area berada di luar wilayah layanan',
+      inputAttributes: { maxlength: 500 },
+      showCancelButton: true,
+      buttonsStyling: false,
+      width: '24rem',
+      customClass: {
+        popup: 'rounded-3',
+        confirmButton: 'btn btn-outline-danger btn-sm mx-1',
+        cancelButton: 'btn btn-outline-secondary btn-sm mx-1'
+      },
+      confirmButtonText: 'Tolak',
+      cancelButtonText: 'Batal'
+    });
+    if (!isConfirmed) return;
+    try {
+      const res = await fetch(`/api/permintaan/${id}/tolak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: note || '' })
+      });
+      const data = await res.json();
+      if (!res.ok) { showNotif(data.error || 'Gagal menolak.', 'danger'); return; }
+      showNotifAfterReload('Permintaan ditolak.', 'success');
+      location.reload();
+    } catch (e) {
+      showNotif('Koneksi gagal: ' + e.message, 'danger');
+    }
+  });
+});
+
+// ── User: batalkan permintaan yang masih menunggu ─────────────────────
+document.querySelectorAll('.btn-cancel').forEach(btn => {
+  btn.addEventListener('click', async function () {
+    const id = this.dataset.id;
+    const conf = await sikalConfirm({
+      title: 'Batalkan permintaan ini?', icon: 'warning',
+      confirmText: 'Batalkan', confirmColor: 'danger'
+    });
+    if (!conf.isConfirmed) return;
+    try {
+      const res = await fetch(`/api/permintaan/${id}/batal`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { showNotif(data.error || 'Gagal membatalkan.', 'danger'); return; }
+      showNotifAfterReload('Permintaan dibatalkan.', 'success');
+      location.reload();
+    } catch (e) {
+      showNotif('Koneksi gagal: ' + e.message, 'danger');
+    }
+  });
+});
+</script>
+{% endblock %}

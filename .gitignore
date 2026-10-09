@@ -1,0 +1,20 @@
+.venv/
+venv/
+__pycache__/
+instance/
+*.pyc
+.env
+.secrets/
+env.json
+*.db
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local secrets
+.env
+.secrets/
+
+# SQLite
+app.db

@@ -1,0 +1,60 @@
+@startuml activity_permintaan_analisis
+title Diagram Activity Permintaan Analisis Lahan
+
+|#E8F0E3|User|
+start
+:Membuka halaman ajukan permintaan;
+:Menggambar poligon wilayah pada peta;
+:Mengisi nama dan deskripsi (opsional);
+:Menekan tombol "Ajukan Permintaan";
+
+|#F0F0F0|Sistem|
+:Memvalidasi masukan
+(nama, jumlah titik poligon,
+area di dalam Indonesia & bukan perairan);
+if (Masukan valid?) then (tidak)
+  |User|
+  :Menerima pesan kesalahan;
+  stop
+else (ya)
+  |Sistem|
+  :Menyimpan permintaan
+  dengan status "Menunggu";
+endif
+
+|#E3ECF5|Admin|
+:Membuka halaman permintaan analisis;
+:Meninjau permintaan yang masuk;
+if (Tindak lanjut?) then (Tolak)
+  :Mengisi alasan penolakan (opsional);
+  |Sistem|
+  :Mengubah status permintaan
+  menjadi "Ditolak"
+  beserta alasan;
+else (Analisis)
+  |Admin|
+  :Menjalankan analisis;
+  |#F0F0F0|Sistem|
+  :Mengambil data parameter
+  lingkungan dari Google Earth Engine;
+  :Menghitung skor kesesuaian
+  dengan metode SAW;
+  :Menyimpan hasil analisis
+  ke informasi kesesuaian lahan;
+  :Mengubah status permintaan
+  menjadi "Selesai";
+endif
+
+|User|
+:Memantau status permintaan;
+switch (Status permintaan?)
+case (Menunggu)
+  :Dapat membatalkan permintaan;
+case (Selesai)
+  :Melihat hasil analisis;
+case (Ditolak)
+  :Melihat alasan penolakan;
+endswitch
+stop
+
+@enduml

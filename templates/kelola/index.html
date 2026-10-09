@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% block title %}Kelola Akun - SiKal{% endblock %}
+{% block page_title %}Kelola Akun Pengguna{% endblock %}
+
+{% block extra_css %}
+<style>
+  .content-body { display: flex; flex-direction: column; }
+
+  /* Unified 4px radius for all boxes on this page */
+  .card, .card-header, .modal-content, .badge { border-radius: 4px !important; }
+  .card-header {
+    border-top-left-radius: 4px !important; border-top-right-radius: 4px !important;
+    height: 56px; padding-top: 0; padding-bottom: 0;
+    display: flex; align-items: center;
+  }
+
+  /* Align first/last table cells with card-header horizontal padding */
+  .card .table > :is(thead, tbody) > tr > :first-child { padding-left: 1rem; }
+  .card .table > :is(thead, tbody) > tr > :last-child  { padding-right: 1rem; }
+
+  /* Force 14px for all text in cards — keep sub-titles & special sizes intact */
+  .card, .card * { font-size: 14px; }
+  .card-header h6, .card-header h6 * { font-size: 1rem; }
+  .card h5 { font-size: 1.25rem; }
+  .card .fs-2 { font-size: 1.5rem; }
+  .card .fs-5 { font-size: 1.25rem; }
+  .card-header h6 .bi { font-size: 1rem; }
+
+  /* Truncate panjang teks kolom tabel — sama seperti informasi/index.html */
+  #memberTable { table-layout: fixed; width: 100%; }
+  #memberTable th:nth-child(1) { width: 48px; }   /* NO */
+  #memberTable th:nth-child(2) { width: 18%; }    /* Username */
+  #memberTable th:nth-child(3) { width: 18%; }    /* Nama */
+  #memberTable th:nth-child(4) { width: 22%; }    /* Email */
+  #memberTable th:nth-child(5) { width: 68px; }   /* Role */
+  #memberTable th:nth-child(6) { width: 90px; }   /* Dibuat */
+  /* th:nth-child(7) sudah width:110px di HTML */
+  #memberTable td:nth-child(2),
+  #memberTable td:nth-child(3),
+  #memberTable td:nth-child(4) {
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Search + pagination (sama dengan informasi/index.html) */
+  .toolbar-info { font-size:.85rem; color:#6c757d; }
+  .pagination-footer { background:#fafbfa; border-top:1px solid #e9ecef; }
+  .pagination-footer .pagination { margin-bottom:0; }
+  .pagination-footer .page-link { color:#495057; }
+  .pagination-footer .page-link:hover { background:#e9ecef; color:#212529; }
+  .pagination-footer .page-link:focus { box-shadow:0 0 0 .2rem rgba(108,117,125,.25); }
+  .pagination-footer .page-item.active .page-link { background:#6c757d; border-color:#6c757d; color:#fff; }
+  .pagination-footer .page-item.disabled .page-link { color:#adb5bd; }
+  .empty-row td { padding:2.5rem !important; text-align:center; color:#6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column" style="flex:1;min-height:0;gap:1.5rem;">
+
+  <!-- Invite code card -->
+  <div class="card shadow-sm border-success">
+    <div class="card-header bg-success bg-opacity-10">
+      <h6 class="mb-0 fw-semibold text-white">
+        <i class="bi bi-key-fill me-2 text-white"></i>Kode Undangan
+      </h6>
+    </div>
+    <div class="card-body d-flex flex-wrap align-items-center gap-3">
+      <div>
+        <p class="text-muted small mb-1">Bagikan kode ini untuk mengundang anggota ke workspace anda</p>
+        <div class="d-flex align-items-center gap-2">
+          <code id="inviteCodeDisplay" class="fs-5 fw-bold text-success px-3 py-1 bg-light border rounded"
+                style="letter-spacing:.15em">{{ invite_code }}</code>
+          <button class="btn btn-sm btn-outline-secondary" id="btnCopyCode" title="Salin kode">
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+      </div>
+      <div class="ms-auto text-end">
+        <button class="btn btn-sm btn-outline-danger" id="btnRegenCode">
+          <i class="bi bi-arrow-clockwise me-1"></i>Generate Ulang
+        </button>
+        <p class="text-muted small mt-1 mb-0">Kode lama akan tidak berlaku</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- User list -->
+  <div class="card shadow-sm h-100">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <h6 class="mb-0 fw-bold">
+        Daftar Anggota ({{ users|length }})
+      </h6>
+      <a href="{{ url_for('kelola_buat') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-person-plus me-1"></i>Buat Akun
+      </a>
+    </div>
+
+    <!-- Search bar -->
+    <div class="card-body border-bottom py-2" style="flex:0 0 auto;">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="input-group input-group-sm" style="max-width:420px">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" id="memberSearchInput" class="form-control" placeholder="Cari data">
+        </div>
+        <button class="btn btn-sm btn-secondary" id="btnMemberSearch">
+          <i class="bi bi-search me-1"></i>Cari
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" id="btnMemberReset">
+          <i class="bi bi-x-circle me-1"></i>Reset
+        </button>
+        <div class="toolbar-info ms-auto" id="memberRangeInfo">
+          {% if users %}Menampilkan 0 dari {{ users|length }} data{% else %}Belum ada data{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="card-body p-0 d-flex flex-column" style="min-height:0;">
+      {% if users %}
+      <div class="table-responsive" style="flex:1;overflow-y:auto;">
+        <table class="table table-hover align-middle mb-0" id="memberTable">
+          <thead class="table-light">
+            <tr>
+              <th>NO</th>
+              <th>Username</th>
+              <th>Nama</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Dibuat</th>
+              <th style="width:110px"></th>
+            </tr>
+          </thead>
+          <tbody id="memberTbody">
+            {% for u in users %}
+            <tr data-username="{{ u.username|lower }}"
+                data-nama="{{ (u.nama or '')|lower }}"
+                data-email="{{ (u.email or '')|lower }}"
+                data-role="{{ u.role|lower }}">
+              <td class="text-muted member-no">{{ loop.index }}</td>
+              <td class="fw-semibold" title="{{ u.username }}">
+                {{ u.username }}
+                {% if u.username == current_user.username %}
+                <span class="badge bg-secondary ms-1">Saya</span>
+                {% endif %}
+              </td>
+              <td title="{{ u.nama or '' }}">{{ u.nama or '—' }}</td>
+              <td title="{{ u.email or '' }}">{{ u.email or '—' }}</td>
+              <td>
+                <span class="badge bg-{{ 'success' if u.role == 'admin' else 'secondary' }}">
+                  {{ u.role|capitalize }}
+                </span>
+              </td>
+              <td><small>{{ u.created_at[:10] }}</small></td>
+              <td>
+                <div class="d-flex gap-1 justify-content-end">
+                  <a href="{{ url_for('kelola_edit', user_id=u.id) }}" class="btn btn-sm btn-outline-success" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                  <button class="btn btn-sm btn-outline-danger delete-btn"
+                          data-id="{{ u.id }}" data-username="{{ u.username }}"
+                          title="Hapus">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination footer -->
+      <div class="pagination-footer px-3 py-2 d-flex flex-wrap justify-content-end align-items-center gap-2">
+        <nav>
+          <ul class="pagination pagination-sm" id="memberPagination"></ul>
+        </nav>
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted">
+        <i class="bi bi-people fs-2 d-block mb-2"></i>
+        Belum ada anggota
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Copy invite code
+const btnCopyCode = document.getElementById('btnCopyCode');
+if (btnCopyCode) {
+  btnCopyCode.addEventListener('click', function () {
+    const code = document.getElementById('inviteCodeDisplay').textContent.trim();
+    navigator.clipboard.writeText(code).then(() => {
+      const icon = this.querySelector('i');
+      icon.className = 'bi bi-clipboard-check text-success';
+      setTimeout(() => { icon.className = 'bi bi-clipboard'; }, 2000);
+    });
+  });
+}
+
+// Regenerate invite code
+const btnRegenCode = document.getElementById('btnRegenCode');
+if (btnRegenCode) {
+  btnRegenCode.addEventListener('click', async function () {
+    const result = await sikalConfirm({
+      title: 'Generate ulang kode?',
+      text: 'Kode lama tidak akan berlaku lagi',
+      icon: 'warning',
+      confirmColor: 'warning',
+      confirmText: 'Generate'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch('/api/invite-code/regenerate', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('inviteCodeDisplay').textContent = data.invite_code;
+        const icon = document.getElementById('btnCopyCode').querySelector('i');
+        icon.className = 'bi bi-clipboard';
+        sikalToast('Kode undangan berhasil diperbarui.', 'success');
+      } else {
+        sikalToast('Gagal generate ulang kode.', 'danger');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      sikalToast('Terjadi kesalahan saat generate ulang kode.', 'danger');
+    }
+  });
+}
+
+// ── Search + Pagination tabel anggota ───────────────────────────────────
+(function initMemberTable() {
+  const tbody        = document.getElementById('memberTbody');
+  if (!tbody) return;
+
+  const allRows      = Array.from(tbody.querySelectorAll('tr'));
+  const searchInput  = document.getElementById('memberSearchInput');
+  const btnSearch    = document.getElementById('btnMemberSearch');
+  const btnReset     = document.getElementById('btnMemberReset');
+  const rangeInfo    = document.getElementById('memberRangeInfo');
+  const paginationEl = document.getElementById('memberPagination');
+  const PAGE_SIZE    = 10;
+
+  let state = { query: '', page: 1, filtered: allRows.slice() };
+
+  function applyFilter() {
+    const q = state.query.trim().toLowerCase();
+    state.filtered = !q ? allRows.slice() : allRows.filter(tr =>
+      tr.dataset.username.includes(q) ||
+      tr.dataset.nama.includes(q) ||
+      tr.dataset.email.includes(q) ||
+      tr.dataset.role.includes(q)
+    );
+  }
+
+  function render() {
+    applyFilter();
+    const total      = state.filtered.length;
+    const totalAll   = allRows.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (state.page > totalPages) state.page = totalPages;
+    const start = (state.page - 1) * PAGE_SIZE;
+    const end   = Math.min(start + PAGE_SIZE, total);
+
+    allRows.forEach(tr => { tr.style.display = 'none'; });
+    state.filtered.slice(start, end).forEach((tr, i) => {
+      tr.style.display = '';
+      tbody.appendChild(tr);
+      const noCell = tr.querySelector('.member-no');
+      if (noCell) noCell.textContent = start + i + 1;
+    });
+
+    // Baris kosong jika tidak ada hasil
+    let emptyRow = tbody.querySelector('.empty-row');
+    if (total === 0) {
+      if (!emptyRow) {
+        emptyRow = document.createElement('tr');
+        emptyRow.className = 'empty-row';
+        emptyRow.innerHTML = '<td colspan="7"><i class="bi bi-inbox fs-3 d-block mb-2"></i>Tidak ada data yang cocok.</td>';
+        tbody.appendChild(emptyRow);
+      }
+      emptyRow.style.display = '';
+    } else if (emptyRow) {
+      emptyRow.style.display = 'none';
+    }
+
+    // Teks info
+    const startDisp = total === 0 ? 0 : start + 1;
+    const infoText = total === 0
+      ? `Tidak ada hasil dari ${totalAll} data`
+      : `Menampilkan ${startDisp}-${end} dari ${total} data` +
+        (total !== totalAll ? ` (difilter dari ${totalAll})` : '');
+    rangeInfo.textContent = infoText;
+
+    // Pagination
+    paginationEl.innerHTML = '';
+    function addItem(label, page, opts = {}) {
+      const li = document.createElement('li');
+      li.className = 'page-item' + (opts.active ? ' active' : '') + (opts.disabled ? ' disabled' : '');
+      const a = document.createElement('a');
+      a.className = 'page-link'; a.href = '#';
+      a.textContent = label;
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        if (opts.disabled || opts.active) return;
+        state.page = page; render();
+      });
+      li.appendChild(a);
+      paginationEl.appendChild(li);
+    }
+    addItem('Sebelum', state.page - 1, { disabled: state.page === 1 });
+    for (let p = 1; p <= totalPages; p++) addItem(String(p), p, { active: p === state.page });
+    addItem('Sesudah', state.page + 1, { disabled: state.page === totalPages });
+  }
+
+  function doSearch() { state.query = searchInput.value; state.page = 1; render(); }
+  btnSearch.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  let t;
+  searchInput.addEventListener('input', () => { clearTimeout(t); t = setTimeout(doSearch, 200); });
+  btnReset.addEventListener('click', () => {
+    searchInput.value = ''; state.query = ''; state.page = 1; render();
+  });
+
+  render();
+})();
+
+// Delete user
+document.querySelectorAll('.delete-btn').forEach(btn => {
+  btn.addEventListener('click', async function () {
+    const id = this.dataset.id;
+    const r = await sikalConfirm({ title: 'Hapus pengguna?', icon: 'warning', confirmText: 'Hapus', confirmColor: 'danger' });
+    if (!r.isConfirmed) return;
+    const res = await fetch(`/api/admin/user/${id}/delete`, { method: 'POST' });
+    if (res.ok) {
+      location.reload();
+    } else {
+      const data = await res.json();
+      showNotif(data.error || 'Gagal menghapus pengguna.', 'danger');
+    }
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Buat Akun Baru - SiKal{% endblock %}
+{% block page_title %}Buat Akun Baru{% endblock %}
+
+{% block extra_css %}
+<style>
+  .content-body { display: flex; flex-direction: column; }
+
+  /* Unified 4px radius for all boxes on this page */
+  .card, .card-header, .modal-content, .badge { border-radius: 4px !important; }
+  .card-header {
+    border-top-left-radius: 4px !important; border-top-right-radius: 4px !important;
+    height: 56px; padding-top: 0; padding-bottom: 0;
+    display: flex; align-items: center;
+  }
+
+  /* Force 14px for all text in cards — keep sub-titles & special sizes intact */
+  .card, .card * { font-size: 14px; }
+  .card-header h6, .card-header h6 * { font-size: 1rem; }
+  .card h5 { font-size: 1.25rem; }
+  .card .fs-2 { font-size: 1.5rem; }
+  .card-header h6 .bi { font-size: 1rem; }
+  .avatar-circle .bi { font-size: 2rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4" style="flex:1;min-height:0;">
+
+  <!-- Kiri: Info -->
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold">
+          Akun Baru
+        </h6>
+      </div>
+      <div class="card-body text-center d-flex flex-column align-items-center justify-content-center py-5">
+        <div class="avatar-circle mx-auto mb-3" style="opacity: 0.5;">
+          <i class="bi bi-person-fill"></i>
+        </div>
+        <h5 class="fw-bold mb-1">Akun Baru</h5>
+        <p class="text-muted small">Isi formulir untuk membuat akun baru</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kanan: Form Buat -->
+  <div class="col-md-8">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold">
+          Form Pendaftaran Akun
+        </h6>
+      </div>
+      <div class="card-body d-flex flex-column">
+        <form method="POST" class="d-flex flex-column flex-grow-1"
+              data-confirm="Buat akun pengguna ini?" data-confirm-color="success" data-confirm-yes="Buat">
+          <input type="hidden" name="mode" value="create">
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Username <span class="text-danger">*</span></label>
+              <input type="text" name="username" id="usernameInput" class="form-control"
+                     placeholder="Contoh: user_nama01" required minlength="8" maxlength="15">
+              <div id="unRules" class="mt-2 d-none" style="font-size:13px;">
+                <div id="rule-un-len"   class="text-secondary"><i class="bi bi-circle me-1"></i>Min. 8 karakter</div>
+                <div id="rule-un-max"   class="text-secondary"><i class="bi bi-circle me-1"></i>Maks. 15 karakter</div>
+                <div id="rule-un-char"  class="text-secondary"><i class="bi bi-circle me-1"></i>Hanya huruf, angka, dan garis bawah (_)</div>
+                <div id="rule-un-start" class="text-secondary"><i class="bi bi-circle me-1"></i>Tidak diawali angka</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Nama Lengkap</label>
+              <input type="text" name="nama" class="form-control"
+                     placeholder="Nama lengkap (opsional)" maxlength="255">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Email</label>
+              <input type="email" name="email" class="form-control"
+                     placeholder="email@contoh.com" maxlength="255">
+            </div>
+          </div>
+
+          <hr class="my-4">
+          <p class="text-muted small mb-3">
+            <i class="bi bi-lock-fill me-1"></i>
+            Buat password untuk pengguna baru
+          </p>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Password</label>
+              <input type="password" name="password" id="newPw" class="form-control"
+                     placeholder="Kosongkan untuk generate otomatis" autocomplete="new-password" minlength="8" maxlength="255">
+              <div id="pwRules" class="mt-2 d-none" style="font-size:13px;">
+                <div id="rule-pw-len" class="text-secondary"><i class="bi bi-circle me-1"></i>Min. 8 karakter</div>
+                <div id="rule-pw-up"  class="text-secondary"><i class="bi bi-circle me-1"></i>Huruf kapital (A-Z)</div>
+                <div id="rule-pw-num" class="text-secondary"><i class="bi bi-circle me-1"></i>Angka (0-9)</div>
+                <div id="rule-pw-sym" class="text-secondary"><i class="bi bi-circle me-1"></i>Simbol (!@#$...)</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Konfirmasi Password</label>
+              <input type="password" name="confirm_password" id="confirmPw" class="form-control"
+                     placeholder="Ulangi password" autocomplete="new-password" minlength="8" maxlength="255">
+              <div id="confirmStatus" class="small mt-1 d-none"></div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 mt-auto pt-4">
+            <button type="submit" class="btn btn-success fw-semibold">
+              <i class="bi bi-person-plus me-1"></i>Buat Akun
+            </button>
+            <a href="{{ url_for('buat_akun') }}" class="btn btn-outline-secondary">Batal</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function setRule(id, ok) {
+  const el = document.getElementById(id);
+  if (ok === null) { el.className = 'text-secondary'; el.querySelector('i').className = 'bi bi-circle me-1'; }
+  else if (ok)     { el.className = 'text-success';   el.querySelector('i').className = 'bi bi-check-circle-fill me-1'; }
+  else             { el.className = 'text-danger';    el.querySelector('i').className = 'bi bi-x-circle-fill me-1'; }
+}
+
+document.getElementById('usernameInput').addEventListener('input', function () {
+  const un = this.value;
+  const rules = document.getElementById('unRules');
+  if (un.length > 0) {
+    rules.classList.remove('d-none');
+    setRule('rule-un-len',   un.length >= 8);
+    setRule('rule-un-max',   un.length <= 15);
+    setRule('rule-un-char',  /^[A-Za-z0-9_]+$/.test(un));
+    setRule('rule-un-start', !/^[0-9]/.test(un));
+  } else {
+    rules.classList.add('d-none');
+  }
+});
+
+function updatePwUI() {
+  const pw  = document.getElementById('newPw').value;
+  const cpw = document.getElementById('confirmPw').value;
+
+  const pwRules = document.getElementById('pwRules');
+  if (pw.length > 0) {
+    pwRules.classList.remove('d-none');
+    setRule('rule-pw-len', pw.length >= 8);
+    setRule('rule-pw-up',  /[A-Z]/.test(pw));
+    setRule('rule-pw-num', /[0-9]/.test(pw));
+    setRule('rule-pw-sym', /[^A-Za-z0-9]/.test(pw));
+  } else {
+    pwRules.classList.add('d-none');
+  }
+
+  const cs = document.getElementById('confirmStatus');
+  if (cpw.length > 0) {
+    cs.classList.remove('d-none');
+    if (pw === cpw) {
+      cs.className = 'small mt-1 text-success';
+      cs.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Password cocok';
+    } else {
+      cs.className = 'small mt-1 text-danger';
+      cs.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Password tidak cocok';
+    }
+  } else {
+    cs.classList.add('d-none');
+  }
+}
+
+document.getElementById('newPw').addEventListener('input', updatePwUI);
+document.getElementById('confirmPw').addEventListener('input', updatePwUI);
+</script>
+{% endblock %}

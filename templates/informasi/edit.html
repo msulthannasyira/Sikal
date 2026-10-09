@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}Edit Analisis - SiKal{% endblock %}
+{% block page_title %}Perbarui Analisis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+.card-header {
+  height: 56px; padding-top: 0; padding-bottom: 0;
+  display: flex; align-items: center;
+}
+.param-input-group .input-hint { font-size:.75rem; color:#6c757d; margin-top:.2rem; }
+.param-score-badge { min-width:2rem; text-align:center; }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ── Unified form wrapping all editable sections ── #}
+<form method="POST" id="editForm">
+
+<div class="row g-4">
+  <!-- Form edit metadata -->
+  <div class="col-md-4 d-flex flex-column gap-3" style="height:591px">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold">Edit Informasi</h6>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-danger" id="deleteBtn">
+            <i class="bi bi-trash3 me-1"></i>Hapus
+          </button>
+          <button type="submit" form="editForm" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-floppy me-1"></i>Simpan
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nama Analisis <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control" maxlength="255"
+                   value="{{ row.name }}" required>
+          </div>
+          <div class="mb-0">
+            <label class="form-label fw-semibold">Deskripsi</label>
+            <textarea name="description" class="form-control" rows="3" maxlength="1000" style="resize:none">{{ row.description or '' }}</textarea>
+          </div>
+      </div>
+    </div>
+
+    <!-- Pratinjau hasil baru (diperbarui live oleh JS) -->
+    <div class="card shadow-sm flex-grow-1 d-flex flex-column">
+      <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold">Hasil Kesesuaian</h6>
+      </div>
+      <div class="card-body text-center py-3 d-flex flex-column justify-content-center">
+        <span id="previewBadge" class="badge px-4 py-2 fs-5 mb-2 d-inline-block bg-secondary align-self-center">
+          {{ saw.kelas }}
+        </span>
+        <div id="previewLabel" class="fw-semibold">{{ saw.kelas_label }}</div>
+        <div class="text-muted small">
+          Skor: <span id="previewScore">{{ "%.4f"|format(saw.total) }}</span>
+        </div>
+        <div class="progress mt-2" style="height:6px">
+          <div id="previewBar" class="progress-bar bg-success"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Re-analyze section -->
+  <div class="col-md-8 d-flex flex-column gap-3" style="height:591px">
+    <div class="card shadow-sm flex-grow-1 d-flex flex-column">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold">Analisis Ulang</h6>
+        <button id="reanalyzeBtn" class="btn btn-sm btn-outline-success" type="button">
+          <span id="reBtnText"><i class="bi bi-search me-1"></i>Analisis</span>
+          <span id="reBtnSpinner" class="d-none">
+            <span class="spinner-border spinner-border-sm me-1"></span>Memproses…
+          </span>
+        </button>
+      </div>
+      <div class="card-body px-3 py-2 d-flex flex-column" style="min-height:0">
+        <div id="map" class="flex-grow-1" style="min-height:0;border-radius:6px"></div>
+        <p class="text-muted small mt-2 mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Klik <strong>Analisis</strong> untuk mengambil nilai kembali dari GEE pada area yang sama.
+        </p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{# ── Editor Nilai Mentah Parameter ── #}
+{% set param_meta = {
+  'slope':          {'label':'Kelerengan',       'unit':'%',       'step':'any', 'hint':'≤3%→Optimal, ≤8%→Baik, ≤30%→Cukup, >30%→Buruk'},
+  'drainage':       {'label':'Drainase (TWI)',    'unit':'TWI',     'step':'any', 'hint':'>5.5→Optimal, >3.5→Baik, >1.5→Cukup, ≤1.5→Buruk'},
+  'soil_depth':     {'label':'Kedalaman Tanah',   'unit':'cm',      'step':'any', 'hint':'>50cm→Optimal, 40-50→Baik, 25-40→Cukup, <25→Buruk'},
+  'soil_texture':   {'label':'Tekstur Tanah',     'unit':'% liat',  'step':'any', 'hint':'≥30%→Optimal, ≥18%→Baik, ≥10%→Cukup, <10%→Buruk'},
+  'soil_type':      {'label':'Jenis Tanah',       'unit':'kode USDA','step':'any','hint':'160-230→Optimal(Cambisols), 80-120→Baik(Fluvisols), 380-433→Cukup(Acrisols)'},
+  'lulc':           {'label':'Penggunaan Lahan',  'unit':'kode ESA', 'step':'any','hint':'40→Optimal, 20/30/60→Baik, 10/90/95→Cukup, 50/70/80→Buruk'},
+  'precipitation':  {'label':'Curah Hujan',       'unit':'mm/tahun','step':'any', 'hint':'>2000→Optimal, ≥1000→Baik, <1000→Buruk'},
+  'temperature':    {'label':'Temperatur',        'unit':'°C',      'step':'any', 'hint':'24-29°C→Optimal, 22-24/29-32→Baik, 18-22/32-35→Cukup'},
+  'distance_road':  {'label':'Jarak dari Jalan',  'unit':'meter',   'step':'any', 'hint':'≤1000m→Optimal, ≤2000→Baik, ≤4000→Cukup, >4000→Buruk'},
+  'distance_river': {'label':'Jarak dari Sungai', 'unit':'meter',   'step':'any', 'hint':'≤500m→Optimal, ≤1000→Baik, ≤2000→Cukup, >2000→Buruk'},
+} %}
+<div class="card shadow-sm mt-4">
+  <div class="card-header bg-white">
+    <h6 class="mb-0 fw-bold">
+      Nilai Parameter
+    </h6>
+  </div>
+  <div class="card-body">
+    <div class="row g-3" id="paramGrid">
+      {% for key in criteria %}
+      {% set pm = param_meta[key] %}
+      {% set cur_val = raw_params.get(key) %}
+      {% set cur_score = saw.scores[key] %}
+      {% set score_color = {'1':'danger','2':'warning','3':'primary','4':'success'} %}
+      <div class="col-md-6 param-input-group">
+        <label class="form-label fw-semibold small mb-1">
+          {{ pm.label }}
+          <span class="text-muted fw-normal">({{ pm.unit }})</span>
+        </label>
+        <div class="input-group input-group-sm">
+          <input type="number"
+                 name="raw_{{ key }}"
+                 id="inp_{{ key }}"
+                 class="form-control param-raw-input"
+                 data-key="{{ key }}"
+                 step="{{ pm.step }}"
+                 value="{{ cur_val if cur_val is not none else '' }}"
+                 placeholder="kosong = tidak ada data">
+          <span class="input-group-text fw-semibold param-score-badge bg-{{ score_color[cur_score|string] }}-subtle border-{{ score_color[cur_score|string] }}-subtle text-{{ score_color[cur_score|string] }}"
+                id="score_{{ key }}">{{ cur_score }}/4</span>
+        </div>
+        <div class="input-hint">{{ pm.hint }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="text-muted small mb-0 mt-3">
+      <i class="bi bi-info-circle me-1"></i>
+      Untuk input parameter manual, ubah nilai di atas lalu klik <strong>Simpan</strong>. Semua skor dan kelas kesesuaian akan dihitung ulang otomatis.
+    </p>
+  </div>
+</div>
+
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script type="application/json" id="edit-data">
+{"polygon": {{ polygon | tojson }}, "rowId": {{ row.id }}}
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const _ed = JSON.parse(document.getElementById('edit-data').textContent);
+const rowId = _ed.rowId;
+// ── Mirror of Python SAW rating functions ──────────────────────────────
+function rateSlope(v)        { if(isNaN(v)) return 1; return v<=3?4:v<=8?3:v<=30?2:1; }
+function rateDrainage(v)     { if(isNaN(v)) return 1; return v>5.5?4:v>3.5?3:v>1.5?2:1; }
+function rateSoilDepth(v)    { if(isNaN(v)) return 1; return v>150?4:v>100?3:v>50?2:1; }
+function rateSoilTexture(v)  { if(isNaN(v)) return 1; return v>=40?4:v>=30?3:v>=20?2:1; }
+function rateSoilType(v) {
+  if(isNaN(v)) return 1; v=Math.round(v);
+  if(v>=160&&v<=230) return 4;
+  if((v>=1&&v<=50)||(v>=80&&v<=120)) return 3;
+  if(v>=380&&v<=433) return 2;
+  return 1;
+}
+function rateLulc(v) {
+  if(isNaN(v)) return 1;
+  const m={10:2,20:3,30:3,40:4,50:1,60:3,70:1,80:1,90:2,95:2,100:1};
+  return m[Math.round(v)]||1;
+}
+function ratePrecipitation(v){ if(isNaN(v)) return 1; return v>2000?4:v>=1000?3:1; }
+function rateTemperature(v)  {
+  if(isNaN(v)) return 1;
+  if(v>=24&&v<=29) return 4;
+  if((v>=20&&v<24)||(v>29&&v<=33)) return 3;
+  if((v>=15&&v<20)||(v>33&&v<=37)) return 2;
+  return 1;
+}
+function rateDistanceRoad(v) { if(isNaN(v)) return 1; return v<=1000?4:v<=2000?3:v<=4000?2:1; }
+function rateDistanceRiver(v){ if(isNaN(v)) return 1; return v<=500?4:v<=1000?3:v<=2000?2:1; }
+
+const RATERS = {
+  slope:rateSlope, drainage:rateDrainage, soil_depth:rateSoilDepth,
+  soil_texture:rateSoilTexture, soil_type:rateSoilType, lulc:rateLulc,
+  precipitation:ratePrecipitation, temperature:rateTemperature,
+  distance_road:rateDistanceRoad, distance_river:rateDistanceRiver,
+};
+const SCORE_COLORS = {1:'danger',2:'warning',3:'primary',4:'success'};
+const KELAS_COLORS = {S1:'success',S2:'primary',S3:'warning',N:'danger'};
+const KELAS_LABELS = {S1:'Sangat Sesuai',S2:'Cukup Sesuai',S3:'Sesuai Marginal',N:'Tidak Sesuai'};
+const N_CRITERIA = 10;
+
+function updatePreview() {
+  let total = 0;
+  document.querySelectorAll('.param-raw-input').forEach(inp => {
+    const key = inp.dataset.key;
+    const val = parseFloat(inp.value);
+    const sc  = isNaN(val) ? 1 : RATERS[key](val);
+    total += sc / 4 / N_CRITERIA;
+
+    const badge = document.getElementById('score_' + key);
+    if(badge) {
+      // Reset old color classes
+      Object.values(SCORE_COLORS).forEach(c => {
+        badge.classList.remove('bg-'+c+'-subtle','border-'+c+'-subtle','text-'+c);
+      });
+      const col = SCORE_COLORS[sc];
+      badge.classList.add('bg-'+col+'-subtle','border-'+col+'-subtle','text-'+col);
+      badge.textContent = sc + '/4';
+    }
+  });
+
+  total = Math.round(total * 10000) / 10000;
+  const kelas = total>=0.8125?'S1':total>=0.6250?'S2':total>=0.4375?'S3':'N';
+  const col = KELAS_COLORS[kelas];
+
+  const badge = document.getElementById('previewBadge');
+  Object.values(KELAS_COLORS).forEach(c => badge.classList.remove('bg-'+c));
+  badge.classList.add('bg-'+col);
+  badge.textContent = kelas;
+
+  document.getElementById('previewLabel').textContent = KELAS_LABELS[kelas];
+  document.getElementById('previewScore').textContent = total.toFixed(4);
+  document.getElementById('previewBar').style.width = Math.round(total*100)+'%';
+  document.getElementById('previewBar').className = 'progress-bar bg-'+col;
+}
+
+document.querySelectorAll('.param-raw-input').forEach(inp =>
+  inp.addEventListener('input', updatePreview)
+);
+updatePreview();
+
+// ── Leaflet map (read-only) ───────────────────────────────────────────
+const existingCoords = _ed.polygon;
+
+const map = L.map('map');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+const existingLatlngs = existingCoords.map(c => [c[1], c[0]]);
+const existingPoly = L.polygon(existingLatlngs, { color: '#198754', fillOpacity: 0.25 }).addTo(map);
+map.fitBounds(existingPoly.getBounds(), { padding: [20, 20] });
+
+// Re-analyze
+document.getElementById('reanalyzeBtn').addEventListener('click', async function () {
+  const coords = existingCoords;
+
+  document.getElementById('reBtnText').classList.add('d-none');
+  document.getElementById('reBtnSpinner').classList.remove('d-none');
+  this.disabled = true;
+
+  try {
+    const res = await fetch('/api/analysis/' + rowId + '/reanalyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coordinates: coords })
+    });
+    const data = await res.json();
+    if (!res.ok) { showNotif(data.error || 'Terjadi kesalahan.', 'danger'); return; }
+
+    const r = data.result;
+
+    // Auto-fill raw param inputs from GEE result
+    if (r.raw) {
+      Object.entries(r.raw).forEach(([key, val]) => {
+        const inp = document.getElementById('inp_' + key);
+        if (inp && val !== null && val !== undefined) {
+          inp.value = typeof val === 'number' ? parseFloat(val.toFixed(4)) : val;
+        }
+      });
+      updatePreview();
+    }
+    // Scroll to params section
+    document.getElementById('paramGrid').scrollIntoView({ behavior:'smooth', block:'start' });
+  } catch (e) {
+    showNotif('Koneksi gagal: ' + e.message, 'danger');
+  } finally {
+    document.getElementById('reBtnText').classList.remove('d-none');
+    document.getElementById('reBtnSpinner').classList.add('d-none');
+    this.disabled = false;
+  }
+});
+
+// ── Delete ────────────────────────────────────────────────────────────
+document.getElementById('deleteBtn').addEventListener('click', async function () {
+  const r = await sikalConfirm({ title: 'Hapus analisis?', icon: 'warning', confirmText: 'Hapus', confirmColor: 'danger' });
+  if (!r.isConfirmed) return;
+  const res = await fetch('/api/analysis/' + rowId + '/delete', { method: 'POST' });
+  if (res.ok) { window.location.href = '/informasi'; }
+  else { showNotif('Gagal menghapus.', 'danger'); }
+});
+</script>
+{% endblock %}

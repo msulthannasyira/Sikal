@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kelola Akun - SiKal</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+      max-width: 960px;
+      margin: 24px auto;
+      padding: 0 16px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.5rem; }
+    hr { border: none; border-top: 1px solid #ddd; margin: 1.5rem 0; }
+    a { color: inherit; }
+
+    .messages { list-style: none; padding: 0; margin: 1rem 0; }
+    .messages li {
+      border: 1px solid #ccc;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      border-radius: 4px;
+    }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+
+    label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.9rem; }
+    input, select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      font: inherit;
+    }
+    .field { margin-bottom: 12px; }
+
+    button {
+      padding: 8px 14px;
+      border: 1px solid #888;
+      border-radius: 4px;
+      background: #fff;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:hover { border-color: #555; }
+
+    .btn-link {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid #888;
+      border-radius: 4px;
+      text-decoration: none;
+    }
+    .btn-link:hover { border-color: #555; }
+
+    .card {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 16px;
+      max-width: 460px;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+    th { background: #f4f4f4; }
+    tbody tr:nth-child(even) { background: #fafafa; }
+
+    .actions { display: flex; gap: 10px; margin-top: 12px; }
+    .meta { color: #555; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Kelola Akun Admin</h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul class="messages">
+        {% for cat, msg in messages %}
+        <li>{{ msg }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  {% if locked %}
+    <!-- ================= GERBANG KODE RAHASIA ================= -->
+    <p>Masukkan kode rahasia untuk mengakses pengelolaan akun admin.</p>
+    <div class="card">
+      <form method="POST" action="{{ url_for('daftar_admin') }}">
+        <input type="hidden" name="action" value="unlock">
+        <div class="field">
+          <label>Kode Rahasia</label>
+          <input type="password" name="secret_code" required autofocus>
+        </div>
+        <button type="submit">Masuk</button>
+      </form>
+    </div>
+
+  {% elif edit_user %}
+    <!-- ================= SUB-HALAMAN: EDIT / HAPUS AKUN ================= -->
+    <div class="toolbar">
+      <a class="btn-link" href="{{ url_for('daftar_admin') }}">&larr; Kembali ke daftar</a>
+    </div>
+
+    <h2>Edit Akun #{{ edit_user.id }} — {{ edit_user.username }} ({{ edit_user.role }})</h2>
+    <p class="meta">
+      Admin induk: {{ edit_user.admin_username or '-' }} &middot;
+      Invite code: {{ edit_user.invite_code or '-' }} &middot;
+      Dibuat: {{ edit_user.created_at }}
+    </p>
+
+    <div class="card">
+      <form method="POST" action="{{ url_for('daftar_admin') }}">
+        <input type="hidden" name="action" value="edit">
+        <input type="hidden" name="user_id" value="{{ edit_user.id }}">
+        <div class="field">
+          <label>Username *</label>
+          <input type="text" name="username" value="{{ edit_user.username }}" required>
+        </div>
+        <div class="field">
+          <label>Nama</label>
+          <input type="text" name="nama" value="{{ edit_user.nama or '' }}">
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" name="email" value="{{ edit_user.email or '' }}">
+        </div>
+        <div class="field">
+          <label>Password Baru</label>
+          <input type="password" name="new_password" placeholder="kosongkan jika tidak diubah">
+        </div>
+        <button type="submit">Simpan Perubahan</button>
+      </form>
+    </div>
+
+    <h2>Hapus Akun</h2>
+    <form method="POST" action="{{ url_for('daftar_admin') }}" class="delete-form">
+      <input type="hidden" name="action" value="delete">
+      <input type="hidden" name="user_id" value="{{ edit_user.id }}">
+      <button type="submit">Hapus Akun Ini</button>
+    </form>
+
+    <script>
+      document.querySelector('.delete-form').addEventListener('submit', function (e) {
+        if (!confirm('Hapus akun ini? Tindakan tidak dapat dibatalkan.')) e.preventDefault();
+      });
+    </script>
+
+  {% else %}
+    <!-- ================= DAFTAR + BUAT AKUN ================= -->
+    <div class="toolbar">
+      <span></span>
+      <form method="POST" action="{{ url_for('daftar_admin') }}">
+        <input type="hidden" name="action" value="lock">
+        <button type="submit">Kunci / Keluar</button>
+      </form>
+    </div>
+
+    <hr>
+
+    <!-- ---------- BUAT AKUN BARU ---------- -->
+    <h2>Buat Akun Baru</h2>
+    <div class="card">
+      <form method="POST" action="{{ url_for('daftar_admin') }}">
+        <input type="hidden" name="action" value="create">
+        <div class="field">
+          <label>Role</label>
+          <select name="role" id="roleSelect">
+            <option value="admin">admin</option>
+            <option value="user" selected>user</option>
+          </select>
+        </div>
+        <div class="field" id="parentField">
+          <label>Admin induk (khusus role user)</label>
+          <select name="admin_id">
+            <option value="">- pilih admin -</option>
+            {% for a in admins %}
+            <option value="{{ a.id }}">{{ a.username }} (id {{ a.id }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Username *</label>
+          <input type="text" name="username" required>
+        </div>
+        <div class="field">
+          <label>Nama</label>
+          <input type="text" name="nama">
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" name="email">
+        </div>
+        <div class="field">
+          <label>Password * (min. 6 karakter)</label>
+          <input type="password" name="password" required>
+        </div>
+        <button type="submit">Buat Akun</button>
+      </form>
+    </div>
+
+    <hr>
+
+    <!-- ---------- DAFTAR AKUN ---------- -->
+    <h2>Daftar Akun ({{ users|length }})</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Username</th>
+          <th>Nama</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Admin Induk</th>
+          <th>Invite Code</th>
+          <th>Dibuat</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.id }}</td>
+          <td>{{ u.username }}</td>
+          <td>{{ u.nama or '-' }}</td>
+          <td>{{ u.email or '-' }}</td>
+          <td>{{ u.role }}</td>
+          <td>{{ u.admin_username or '-' }}</td>
+          <td>{{ u.invite_code or '-' }}</td>
+          <td>{{ u.created_at }}</td>
+          <td><a class="btn-link" href="{{ url_for('daftar_admin', edit=u.id) }}">Edit</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <script>
+      // Sembunyikan field "Admin induk" saat membuat akun admin
+      (function () {
+        var role = document.getElementById('roleSelect');
+        var parent = document.getElementById('parentField');
+        function sync() { parent.style.display = role.value === 'user' ? '' : 'none'; }
+        if (role && parent) { role.addEventListener('change', sync); sync(); }
+      })();
+    </script>
+
+  {% endif %}
+</body>
+</html>

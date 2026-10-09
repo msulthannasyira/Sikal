@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daftar - SiKal</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo_white.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% if captcha_enabled %}
+  <!-- hCaptcha -->
+  <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+  {% endif %}
+</head>
+<body class="login-page">
+
+<!-- Video background -->
+<video class="login-bg-video" autoplay muted loop playsinline>
+  <source src="{{ url_for('static', filename='video/login.mp4') }}" type="video/mp4">
+</video>
+<!-- Black overlay 80% -->
+<div class="login-bg-overlay"></div>
+
+<div class="login-wrapper">
+  <div class="login-card">
+    <div class="login-brand">
+      <i class="bi bi-leaf-fill text-success fs-1"></i>
+      <h3 class="mt-2 fw-bold">Register</h3>
+      <p class="text-muted small">Buat Akun Baru</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('register') }}" novalidate>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Username <span class="text-danger">*</span></label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
+          <input type="text" name="username" id="usernameInput" class="form-control"
+                 placeholder="Min. 8, maks. 15 karakter" required autofocus
+                 autocomplete="username" value="{{ username or '' }}" minlength="8" maxlength="15">
+        </div>
+        <div id="usernameHint" class="text-danger small mt-1 d-none"></div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Nama Lengkap</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-person-badge-fill"></i></span>
+          <input type="text" name="nama" class="form-control"
+                 placeholder="Nama lengkap (opsional)"
+                 value="{{ nama or '' }}" maxlength="255">
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Password <span class="text-danger">*</span></label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+          <input type="password" name="password" id="passwordInput" class="form-control"
+                 placeholder="Min. 8 karakter, huruf kapital, angka, simbol" required autocomplete="new-password" maxlength="255">
+          <button class="btn btn-outline-secondary" type="button" id="togglePw">
+            <i class="bi bi-eye"></i>
+          </button>
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Konfirmasi Password <span class="text-danger">*</span></label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+          <input type="password" name="confirm_password" id="confirmPw" class="form-control"
+                 placeholder="Ulangi password" required autocomplete="new-password" maxlength="255">
+        </div>
+        <div id="pwMismatch" class="text-danger small mt-1 d-none">Password tidak cocok.</div>
+        <div id="pwStrength" class="small mt-1"></div>
+      </div>
+      {% if captcha_enabled %}
+      <!-- hCaptcha widget -->
+      <div class="mb-3 d-flex justify-content-center">
+        <div class="h-captcha" data-sitekey="{{ site_key }}"></div>
+      </div>
+      {% endif %}
+      <button type="submit" class="btn btn-success w-100 fw-semibold" id="submitBtn">
+        <i class="bi bi-person-check me-1"></i> Daftar
+      </button>
+    </form>
+
+    <div class="text-center mt-3">
+      <span class="text-muted small">Sudah punya akun?</span>
+      <a href="{{ url_for('login') }}" class="small ms-1">Login</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  document.getElementById('togglePw').addEventListener('click', function () {
+    const inp = document.getElementById('passwordInput');
+    const icon = this.querySelector('i');
+    if (inp.type === 'password') { inp.type = 'text'; icon.className = 'bi bi-eye-slash'; }
+    else { inp.type = 'password'; icon.className = 'bi bi-eye'; }
+  });
+
+  function validatePassword(pw) {
+    const rules = [
+      { ok: pw.length >= 8,            msg: 'Min. 8 karakter' },
+      { ok: /[A-Z]/.test(pw),          msg: 'Huruf kapital' },
+      { ok: /[0-9]/.test(pw),          msg: 'Angka' },
+      { ok: /[^A-Za-z0-9]/.test(pw),   msg: 'Simbol/tanda' },
+    ];
+    return rules;
+  }
+
+  function updateUI() {
+    const pw  = document.getElementById('passwordInput').value;
+    const cpw = document.getElementById('confirmPw').value;
+    const un  = document.getElementById('usernameInput').value;
+
+    // Username hint
+    const unHint = document.getElementById('usernameHint');
+    if (un.length === 0 || (un.length >= 8 && un.length <= 15)) {
+      unHint.classList.add('d-none');
+    } else {
+      unHint.textContent = un.length > 15 ? 'Username maksimal 15 karakter.' : 'Username minimal 8 karakter.';
+      unHint.classList.remove('d-none');
+    }
+
+    // Password strength
+    const rules = validatePassword(pw);
+    const strengthEl = document.getElementById('pwStrength');
+    if (pw.length > 0) {
+      strengthEl.innerHTML = rules.map(r =>
+        `<span class="me-2 ${r.ok ? 'text-success' : 'text-danger'}">` +
+        `<i class="bi ${r.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i> ${r.msg}</span>`
+      ).join('');
+    } else {
+      strengthEl.innerHTML = '';
+    }
+
+    // Mismatch
+    const mismatch = pw && cpw && pw !== cpw;
+    document.getElementById('pwMismatch').classList.toggle('d-none', !mismatch);
+
+    // Disable submit
+    const allRulesOk = rules.every(r => r.ok);
+    const unOk = un.length >= 8 && un.length <= 15;
+    document.getElementById('submitBtn').disabled = !allRulesOk || !unOk || !!mismatch;
+  }
+
+  ['usernameInput', 'passwordInput', 'confirmPw'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateUI);
+  });
+</script>
+<script>
+  const bgVid = document.querySelector('.login-bg-video');
+  bgVid.addEventListener('loadedmetadata', function () {
+    bgVid.currentTime = Math.random() * bgVid.duration;
+  });
+</script>
+{% include '_flash_toast.html' %}
+</body>
+</html>

@@ -1,0 +1,844 @@
+{% extends "base.html" %}
+{% block title %}Informasi Kesesuaian Lahan - SiKal{% endblock %}
+{% block page_title %}Informasi Kesesuaian Lahan{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  /* Full-height layout — applies to both Tabel and Peta Penuh modes */
+  body.map-fullview .content-body,
+  body.table-fullview .content-body { display: flex; flex-direction: column; }
+  body.map-fullview .content-body > .card.shadow-sm,
+  body.table-fullview .content-body > .card.shadow-sm {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+  }
+  /* Fix: prevent Bootstrap .card-body's default flex:1 1 auto from
+     stretching toolbar/search rows when card is a flex column */
+  body.map-fullview .card.shadow-sm > .card-header,
+  body.map-fullview #topToolbar,
+  body.map-fullview #searchBar,
+  body.table-fullview .card.shadow-sm > .card-header,
+  body.table-fullview #topToolbar,
+  body.table-fullview #searchBar { flex: 0 0 auto; }
+  /* Map mode */
+  body.map-fullview #mapPanel {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+  }
+  body.map-fullview #fullMap { flex: 1; height: auto !important; min-height: 0; }
+  /* Table mode */
+  body.table-fullview #tablePanel {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+  }
+  body.table-fullview #tablePanel > .table-responsive {
+    flex: 1; overflow-y: auto; min-height: 0;
+  }
+
+  /* Unified 4px radius for all boxes on this page */
+  .card, .card-header, .modal-content, #fullMap, .badge { border-radius: 4px !important; }
+  .card-header { border-top-left-radius: 4px !important; border-top-right-radius: 4px !important; }
+
+  /* Consistent badge width for kelas column (S1, S2, S3, N) */
+  #infoTable td[data-col="kelas"] .badge {
+    display: inline-block; min-width: 32px; text-align: center;
+  }
+
+  /* Align first/last table cells with card-header horizontal padding (1rem) */
+  .card .table > :is(thead, tbody) > tr > :first-child { padding-left: 1rem; }
+  .card .table > :is(thead, tbody) > tr > :last-child  { padding-right: 1rem; }
+
+  /* Force 14px for all text on this page — keep sub-title sizes intact */
+  .card, .card * { font-size: 14px; }
+  .card-header h6, .card-header h6 * { font-size: 1rem; }
+  /* Preserve special-sized UI helpers */
+  .card .sort-indicator { font-size: .55rem; }
+  .card .kelas-pin-label { font-size: 9px; }
+
+  #fullMap { height: 520px; }
+  #fullMap path { cursor: pointer; }
+  .leaflet-popup-content { min-width: 180px; }
+  .kelas-S1 { color: #7B9163; font-weight: 700; }
+  .kelas-S2 { color: #3288BD; font-weight: 700; }
+  .kelas-S3 { color: #b59800; font-weight: 700; }
+  .kelas-N  { color: #D53E4F; font-weight: 700; }
+
+  /* ── Enhanced data table ───────────────────────────────────────── */
+  .table-toolbar { background:#fafbfa; }
+  .toolbar-info { font-size:.85rem; color:#6c757d; }
+  .toolbar-info.has-selection { color:#dc3545; font-weight:600; }
+
+  /* Sortable headers */
+  #infoTable thead th.sortable { cursor:pointer; user-select:none; white-space:nowrap; position:relative; }
+  #infoTable thead th.sortable:hover { background:#eef0ed; }
+  #infoTable thead th.sortable .sort-indicator {
+    display:inline-flex; flex-direction:column; vertical-align:middle;
+    margin-left:.35rem; font-size:.55rem; line-height:.75;
+    opacity:.45; transition:opacity .15s;
+  }
+  #infoTable thead th.sortable .sort-indicator::before { content:"\25B2"; }
+  #infoTable thead th.sortable .sort-indicator::after  { content:"\25BC"; }
+  #infoTable thead th.sortable.sort-asc  .sort-indicator,
+  #infoTable thead th.sortable.sort-desc .sort-indicator { opacity:1; }
+  #infoTable thead th.sortable.sort-asc  .sort-indicator::after  { opacity:.2; }
+  #infoTable thead th.sortable.sort-desc .sort-indicator::before { opacity:.2; }
+
+  /* Row selection */
+  #infoTable tbody tr.row-selected { background:#e9ecef !important; }
+  #infoTable .row-check, #infoTable .master-check { cursor:pointer; }
+  #infoTable .row-check:checked,
+  #infoTable .master-check:checked,
+  #infoTable .master-check:indeterminate {
+    background-color:#6c757d; border-color:#6c757d;
+  }
+  #infoTable .row-check:focus,
+  #infoTable .master-check:focus {
+    border-color:#adb5bd; box-shadow:0 0 0 .2rem rgba(108,117,125,.25);
+  }
+
+  /* Column-filter dropdown */
+  .col-filter-menu { min-width:220px; padding:.5rem .75rem; }
+  .col-filter-menu .form-check { margin-bottom:.25rem; }
+  .col-filter-menu .form-check-input:checked {
+    background-color:#6c757d; border-color:#6c757d;
+  }
+  .col-filter-menu .form-check-input:focus {
+    border-color:#adb5bd; box-shadow:0 0 0 .2rem rgba(108,117,125,.25);
+  }
+
+  /* Pagination footer */
+  .pagination-footer { background:#fafbfa; border-top:1px solid #e9ecef; }
+  .pagination-footer .pagination { margin-bottom:0; }
+  .pagination-footer .page-link { color:#495057; }
+  .pagination-footer .page-link:hover { background:#e9ecef; color:#212529; }
+  .pagination-footer .page-link:focus { box-shadow:0 0 0 .2rem rgba(108,117,125,.25); }
+  .pagination-footer .page-item.active .page-link { background:#6c757d; border-color:#6c757d; color:#fff; }
+  .pagination-footer .page-item.disabled .page-link { color:#adb5bd; }
+
+  /* Empty / no-result state */
+  .empty-row td { padding:2.5rem !important; text-align:center; color:#6c757d; }
+
+  /* Truncate long names in the "Nama Analisis" column so it doesn't push other columns */
+  #infoTable { table-layout: fixed; width: 100%; }
+  #infoTable td[data-col="name"] { max-width: 0; }
+  #infoTable td[data-col="name"] > div,
+  #infoTable td[data-col="name"] > small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Label ukuran sisi + luas pada peta penuh */
+  .area-seg-label {
+    color: #1f2937; font-size: 12px; font-weight: 600; white-space: nowrap;
+    transform: translate(-50%, -50%); display: inline-block;
+    text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+  }
+  .area-center-label {
+    color: #146c43; font-size: 15px; font-weight: 700; white-space: nowrap;
+    transform: translate(-50%, -50%); display: inline-block; text-align: center;
+    text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+  }
+  .card .area-seg-label { font-size: 12px; }
+  .card .area-center-label { font-size: 15px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="height: 56px; padding-top: 0; padding-bottom: 0;">
+    <h6 class="mb-0 fw-bold">
+      Daftar Hasil Analisis
+    </h6>
+    <div class="d-flex gap-2 align-items-center">
+      <div class="btn-group btn-group-sm" role="group" id="viewToggle">
+        <button type="button" class="btn btn-outline-secondary active" id="btnTable">
+          <i class="bi bi-table me-1"></i>Tabel
+        </button>
+        <button type="button" class="btn btn-outline-secondary" id="btnMap">
+          <i class="bi bi-map-fill me-1"></i>Peta
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Toolbar atas: selection info + filter kolom + entri ─── -->
+  <div class="table-toolbar px-3 py-2 border-bottom d-flex flex-wrap align-items-center gap-2" id="topToolbar">
+    <div class="toolbar-info" id="selectionInfo">Tidak ada data terpilih</div>
+
+    {% if current_user.is_admin %}
+    <button class="btn btn-sm btn-outline-danger d-none" id="btnBulkDelete">
+      <i class="bi bi-trash3 me-1"></i>Hapus (<span id="bulkCount">0</span>)
+    </button>
+    {% endif %}
+
+    <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+      <!-- Filter kolom -->
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                data-bs-toggle="dropdown" data-bs-auto-close="outside">
+          <i class="bi bi-layout-three-columns me-1"></i>Filter
+        </button>
+        <div class="dropdown-menu dropdown-menu-end col-filter-menu" id="colFilterMenu">
+          <!-- diisi oleh JS -->
+        </div>
+      </div>
+
+      <!-- Page size -->
+      <label class="toolbar-info mb-0 d-flex align-items-center gap-2">
+        Tampilkan
+        <select id="pageSize" class="form-select form-select-sm" style="width:auto;">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        entri
+      </label>
+    </div>
+  </div>
+
+  <!-- ─── Search row ─── -->
+  <div class="card-body border-bottom py-2" id="searchBar">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <div class="input-group input-group-sm" style="max-width:420px">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" id="searchInput" class="form-control" placeholder="Cari data">
+      </div>
+      <button class="btn btn-sm btn-secondary" id="btnSearch">
+        <i class="bi bi-search me-1"></i>Cari
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" id="btnReset">
+        <i class="bi bi-x-circle me-1"></i>Reset
+      </button>
+      <div class="toolbar-info ms-auto" id="rangeInfo">
+        {% if rows %}Menampilkan 0 dari {{ rows|length }} data{% else %}Belum ada data{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Map panel -->
+  <div id="mapPanel" class="card-body d-none">
+    <div id="fullMap"></div>
+    <p class="text-muted small mt-2 mb-0">
+      <i class="bi bi-info-circle me-1"></i>Arahkan kursor ke area untuk melihat info singkat. Klik area untuk membuka detail.
+    </p>
+  </div>
+
+  <div id="tablePanel" class="card-body p-0">
+    {% if rows %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="infoTable">
+        <thead class="table-light">
+          <tr>
+            <th style="width:36px" data-col="check">
+              <input type="checkbox" class="form-check-input master-check" id="masterCheck" aria-label="Pilih semua">
+            </th>
+            <th style="width:48px" data-col="no">No</th>
+            <th class="sortable" data-col="name" data-type="text" style="width:40%">
+              Nama Analisis <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-col="user" data-type="text" style="width:15%">
+              Oleh <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-col="kelas" data-type="text" style="width:15%">
+              Kelas <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-col="score" data-type="num" style="width:15%">
+              Skor SAW <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-col="date" data-type="text" style="width:15%">
+              Tanggal <span class="sort-indicator"></span>
+            </th>
+            <th style="width:130px" data-col="aksi"></th>
+          </tr>
+        </thead>
+        <tbody id="infoTbody">
+          {% for r in rows %}
+          <tr data-id="{{ r.id }}"
+              data-name="{{ r.name|lower }}"
+              data-user="{{ r.username|lower }}"
+              data-kelas="{{ r.kelas }}"
+              data-score="{{ r.total_score }}"
+              data-date="{{ r.created_at }}">
+            <td data-col="check">
+              <input type="checkbox" class="form-check-input row-check" aria-label="Pilih baris">
+            </td>
+            <td class="text-muted row-no" data-col="no">{{ loop.index }}</td>
+            <td data-col="name">
+              <div class="fw-semibold">{{ r.name }}</div>
+              {% if r.description %}
+              <small class="text-muted">{{ r.description[:60] }}{% if r.description|length > 60 %}…{% endif %}</small>
+              {% endif %}
+            </td>
+            <td data-col="user">{{ r.username }}</td>
+            <td data-col="kelas">
+              <span class="badge {{ r.kelas|kelas_badge }}">{{ r.kelas }}</span>
+            </td>
+            <td data-col="score"><code>{{ "%.4f"|format(r.total_score) }}</code></td>
+            <td data-col="date">
+              <small>{{ r.created_at[:16].replace('T',' ') }}</small>
+            </td>
+            <td data-col="aksi">
+              <div class="d-flex gap-1">
+                <a href="{{ url_for('informasi_detail', result_id=r.id) }}"
+                   class="btn btn-sm btn-outline-secondary" title="Detail">
+                  <i class="bi bi-eye"></i>
+                </a>
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('informasi_edit', result_id=r.id) }}"
+                   class="btn btn-sm btn-outline-success" title="Edit">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                <button class="btn btn-sm btn-outline-danger delete-btn"
+                        data-id="{{ r.id }}" data-name="{{ r.name }}" title="Hapus">
+                  <i class="bi bi-trash3"></i>
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ─── Pagination footer ─── -->
+    <div class="pagination-footer px-3 py-2 d-flex flex-wrap justify-content-end align-items-center gap-2">
+      <nav>
+        <ul class="pagination pagination-sm" id="pagination"></ul>
+      </nav>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+      Belum ada data analisis.
+    </div>
+    {% endif %}
+  </div>{# ← end tablePanel #}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── View toggle ──────────────────────────────────────────────────────────
+const btnTable = document.getElementById('btnTable');
+const btnMap   = document.getElementById('btnMap');
+const tablePanel = document.getElementById('tablePanel');
+const mapPanel   = document.getElementById('mapPanel');
+const searchBar  = document.getElementById('searchBar');
+const topToolbar = document.getElementById('topToolbar');
+
+let mapInitialized = false;
+
+// Initial state: table view is active
+document.body.classList.add('table-fullview');
+
+btnMap.addEventListener('click', function () {
+  btnTable.classList.remove('active');
+  btnMap.classList.add('active');
+  tablePanel.classList.add('d-none');
+  searchBar.classList.add('d-none');
+  topToolbar.classList.add('d-none');
+  mapPanel.classList.remove('d-none');
+  document.body.classList.remove('table-fullview');
+  document.body.classList.add('map-fullview');
+  if (!mapInitialized) { initFullMap(); mapInitialized = true; }
+  else if (window._fullMap) { setTimeout(() => window._fullMap.invalidateSize(), 50); }
+});
+
+btnTable.addEventListener('click', function () {
+  btnMap.classList.remove('active');
+  btnTable.classList.add('active');
+  mapPanel.classList.add('d-none');
+  searchBar.classList.remove('d-none');
+  topToolbar.classList.remove('d-none');
+  tablePanel.classList.remove('d-none');
+  document.body.classList.remove('map-fullview');
+  document.body.classList.add('table-fullview');
+});
+
+// ── Enhanced Table (search / sort / paginate / column filter / select) ──
+(function initTable() {
+  const tbody = document.getElementById('infoTbody');
+  if (!tbody) return; // empty state
+
+  const allRows = Array.from(tbody.querySelectorAll('tr'));
+  const pageSizeSel  = document.getElementById('pageSize');
+  const searchInput  = document.getElementById('searchInput');
+  const btnSearch    = document.getElementById('btnSearch');
+  const btnReset     = document.getElementById('btnReset');
+  const rangeInfo    = document.getElementById('rangeInfo');
+  const paginationEl = document.getElementById('pagination');
+  const selectionInfo= document.getElementById('selectionInfo');
+  const masterCheck  = document.getElementById('masterCheck');
+  const btnBulkDel   = document.getElementById('btnBulkDelete');
+  const bulkCountEl  = document.getElementById('bulkCount');
+
+  let state = {
+    query: '',
+    sortCol: null,    // 'name' | 'user' | 'kelas' | 'score' | 'date' | 'no'
+    sortDir: 'asc',
+    page: 1,
+    pageSize: 10,
+    filtered: allRows.slice(),
+  };
+  // Track selection persistently across pages
+  const selectedIds = new Set();
+
+  // ── Column visibility ───────────────────────────────────────────
+  const columns = [
+    { key:'check', label:'Pilih', alwaysOn:true },
+    { key:'no',    label:'No' },
+    { key:'name',  label:'Nama Analisis', required:true },
+    { key:'user',  label:'Analisis Oleh' },
+    { key:'kelas', label:'Kelas' },
+    { key:'score', label:'Skor SAW' },
+    { key:'date',  label:'Tanggal' },
+    { key:'aksi',  label:'Aksi', alwaysOn:true },
+  ];
+  const hidden = new Set();
+  const colMenu = document.getElementById('colFilterMenu');
+  columns.filter(c => !c.alwaysOn).forEach(c => {
+    const id = 'col-' + c.key;
+    const wrap = document.createElement('div');
+    wrap.className = 'form-check';
+    wrap.innerHTML = `
+      <input class="form-check-input" type="checkbox" id="${id}" checked ${c.required ? 'disabled' : ''}>
+      <label class="form-check-label" for="${id}">${c.label}</label>`;
+    colMenu.appendChild(wrap);
+    wrap.querySelector('input').addEventListener('change', e => {
+      if (e.target.checked) hidden.delete(c.key); else hidden.add(c.key);
+      applyColumnVisibility();
+    });
+  });
+  function applyColumnVisibility() {
+    document.querySelectorAll('#infoTable [data-col]').forEach(el => {
+      const k = el.getAttribute('data-col');
+      el.style.display = hidden.has(k) ? 'none' : '';
+    });
+  }
+
+  // ── Filtering ───────────────────────────────────────────────────
+  function applyFilter() {
+    const q = state.query.trim().toLowerCase();
+    state.filtered = !q ? allRows.slice() : allRows.filter(tr => {
+      return (
+        tr.dataset.name.includes(q) ||
+        tr.dataset.user.includes(q) ||
+        tr.dataset.kelas.toLowerCase().includes(q) ||
+        tr.dataset.date.toLowerCase().includes(q)
+      );
+    });
+  }
+
+  // ── Sorting ─────────────────────────────────────────────────────
+  const KELAS_RANK = { S1: 1, S2: 2, S3: 3, N: 4 };
+  function applySort() {
+    if (!state.sortCol) return;
+    const col = state.sortCol;
+    // For score & date: stack-up (asc) means "largest/newest first"
+    const invertAsc = ['score','date'].includes(col);
+    const dir = (state.sortDir === 'asc' ? 1 : -1) * (invertAsc ? -1 : 1);
+    const numeric = ['score','kelas'].includes(col);
+    state.filtered.sort((a, b) => {
+      let va, vb;
+      if (col === 'score')      { va = +a.dataset.score; vb = +b.dataset.score; }
+      else if (col === 'kelas') { va = KELAS_RANK[a.dataset.kelas] ?? 99; vb = KELAS_RANK[b.dataset.kelas] ?? 99; }
+      else if (col === 'date')  { va = a.dataset.date;   vb = b.dataset.date; }
+      else { va = a.dataset[col] || ''; vb = b.dataset[col] || ''; }
+      if (numeric) return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), 'id') * dir;
+    });
+  }
+
+  document.querySelectorAll('#infoTable thead th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (state.sortCol === col) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortCol = col;
+        state.sortDir = 'asc';
+      }
+      document.querySelectorAll('#infoTable thead th.sortable')
+        .forEach(t => t.classList.remove('sort-asc', 'sort-desc'));
+      th.classList.add(state.sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      render();
+    });
+  });
+
+  // ── Pagination + render ─────────────────────────────────────────
+  function render() {
+    applyFilter();
+    applySort();
+
+    const total = state.filtered.length;
+    const totalAll = allRows.length;
+    const ps = state.pageSize;
+    const totalPages = Math.max(1, Math.ceil(total / ps));
+    if (state.page > totalPages) state.page = totalPages;
+    const start = (state.page - 1) * ps;
+    const end   = Math.min(start + ps, total);
+
+    // Hide all rows, then reorder + show only current page
+    allRows.forEach(tr => tr.style.display = 'none');
+    const pageRows = state.filtered.slice(start, end);
+    pageRows.forEach(tr => {
+      tr.style.display = '';
+      tbody.appendChild(tr); // reorder in DOM to match sort
+    });
+    // Renumber the "No" column based on current sorted+paginated position
+    pageRows.forEach((tr, i) => {
+      const noCell = tr.querySelector('.row-no');
+      if (noCell) noCell.textContent = start + i + 1;
+    });
+
+    // Empty message row
+    let emptyRow = tbody.querySelector('.empty-row');
+    if (total === 0) {
+      if (!emptyRow) {
+        emptyRow = document.createElement('tr');
+        emptyRow.className = 'empty-row';
+        emptyRow.innerHTML = `<td colspan="8"><i class="bi bi-inbox fs-3 d-block mb-2"></i>Tidak ada data yang cocok.</td>`;
+        tbody.appendChild(emptyRow);
+      }
+      emptyRow.style.display = '';
+    } else if (emptyRow) {
+      emptyRow.style.display = 'none';
+    }
+
+    // Info text
+    const startDisp = total === 0 ? 0 : start + 1;
+    rangeInfo.textContent = total === 0
+      ? `Tidak ada hasil dari ${totalAll} data`
+      : `Menampilkan ${startDisp}-${end} dari ${total} data` +
+        (total !== totalAll ? ` (difilter dari ${totalAll})` : '');
+    // Build pagination
+    paginationEl.innerHTML = '';
+    const addItem = (label, page, opts = {}) => {
+      const li = document.createElement('li');
+      li.className = 'page-item' + (opts.active ? ' active' : '') + (opts.disabled ? ' disabled' : '');
+      const a = document.createElement('a');
+      a.className = 'page-link';
+      a.href = '#';
+      a.textContent = label;
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        if (opts.disabled || opts.active) return;
+        state.page = page;
+        render();
+      });
+      li.appendChild(a);
+      paginationEl.appendChild(li);
+    };
+    addItem('Sebelum', state.page - 1, { disabled: state.page === 1 });
+    // Compact page list with ellipsis
+    const pages = buildPageList(state.page, totalPages);
+    pages.forEach(p => {
+      if (p === '…') addItem('…', 0, { disabled: true });
+      else addItem(String(p), p, { active: p === state.page });
+    });
+    addItem('Sesudah', state.page + 1, { disabled: state.page === totalPages });
+
+    // Sync checkbox states for visible rows
+    state.filtered.slice(start, end).forEach(tr => {
+      const cb = tr.querySelector('.row-check');
+      const on = selectedIds.has(tr.dataset.id);
+      cb.checked = on;
+      tr.classList.toggle('row-selected', on);
+    });
+    updateMasterCheck();
+  }
+
+  function buildPageList(cur, total) {
+    if (total <= 7) return Array.from({length: total}, (_, i) => i + 1);
+    const out = [1];
+    const left  = Math.max(2, cur - 1);
+    const right = Math.min(total - 1, cur + 1);
+    if (left > 2) out.push('…');
+    for (let i = left; i <= right; i++) out.push(i);
+    if (right < total - 1) out.push('…');
+    out.push(total);
+    return out;
+  }
+
+  // ── Selection ───────────────────────────────────────────────────
+  function updateMasterCheck() {
+    const visible = Array.from(tbody.querySelectorAll('tr:not([style*="display: none"]) .row-check'));
+    const checked = visible.filter(c => c.checked);
+    if (visible.length === 0) {
+      masterCheck.indeterminate = false;
+      masterCheck.checked = false;
+    } else if (checked.length === visible.length) {
+      masterCheck.indeterminate = false;
+      masterCheck.checked = true;
+    } else if (checked.length === 0) {
+      masterCheck.indeterminate = false;
+      masterCheck.checked = false;
+    } else {
+      masterCheck.indeterminate = true;
+    }
+    updateSelectionUI();
+  }
+
+  function updateSelectionUI() {
+    const n = selectedIds.size;
+    if (n === 0) {
+      selectionInfo.textContent = 'Tidak ada data terpilih';
+      selectionInfo.classList.remove('has-selection');
+    } else {
+      selectionInfo.textContent = `${n} data terpilih`;
+      selectionInfo.classList.add('has-selection');
+    }
+    if (btnBulkDel) {
+      btnBulkDel.classList.toggle('d-none', n === 0);
+      if (bulkCountEl) bulkCountEl.textContent = n;
+    }
+  }
+
+  tbody.addEventListener('change', e => {
+    if (!e.target.classList.contains('row-check')) return;
+    const tr = e.target.closest('tr');
+    const id = tr.dataset.id;
+    if (e.target.checked) selectedIds.add(id); else selectedIds.delete(id);
+    tr.classList.toggle('row-selected', e.target.checked);
+    updateMasterCheck();
+  });
+
+  masterCheck.addEventListener('change', () => {
+    const visible = Array.from(tbody.querySelectorAll('tr:not([style*="display: none"]) .row-check'));
+    visible.forEach(cb => {
+      const tr = cb.closest('tr');
+      cb.checked = masterCheck.checked;
+      if (masterCheck.checked) selectedIds.add(tr.dataset.id); else selectedIds.delete(tr.dataset.id);
+      tr.classList.toggle('row-selected', masterCheck.checked);
+    });
+    updateSelectionUI();
+  });
+
+  // ── Wire up controls ────────────────────────────────────────────
+  pageSizeSel.addEventListener('change', () => {
+    state.pageSize = parseInt(pageSizeSel.value, 10) || 10;
+    state.page = 1;
+    render();
+  });
+
+  function doSearch() {
+    state.query = searchInput.value;
+    state.page = 1;
+    render();
+  }
+  btnSearch.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  // Live search as user types (debounced)
+  let t;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(doSearch, 200);
+  });
+
+  btnReset.addEventListener('click', () => {
+    searchInput.value = '';
+    state.query = '';
+    state.sortCol = null;
+    state.sortDir = 'asc';
+    state.page = 1;
+    document.querySelectorAll('#infoTable thead th.sortable')
+      .forEach(t => t.classList.remove('sort-asc', 'sort-desc'));
+    selectedIds.clear();
+    render();
+  });
+
+  // Initial render
+  render();
+
+  // Bulk delete
+  if (btnBulkDel) {
+    btnBulkDel.addEventListener('click', async () => {
+      const r = await sikalConfirm({ title: 'Hapus data terpilih?', icon: 'warning', confirmText: 'Hapus', confirmColor: 'danger' });
+      if (!r.isConfirmed) return;
+      const ids = Array.from(selectedIds);
+      let ok = 0, fail = 0;
+      for (const id of ids) {
+        try {
+          const res = await fetch(`/api/analysis/${id}/delete`, { method: 'POST' });
+          if (res.ok) ok++; else fail++;
+        } catch { fail++; }
+      }
+      if (fail > 0) showNotifAfterReload(`${ok} berhasil dihapus, ${fail} gagal.`, 'warning');
+      location.reload();
+    });
+  }
+})();
+
+// ── Full map ─────────────────────────────────────────────────────────────
+const KELAS_COLOR = { S1: '#7B9163', S2: '#3288BD', S3: '#FED45C', N: '#D53E4F' };
+const KELAS_LABEL = { S1: 'Sangat Sesuai', S2: 'Cukup Sesuai', S3: 'Sesuai Marginal', N: 'Tidak Sesuai' };
+const ZOOM_THRESHOLD = 13;
+
+function polyCentroid(geoCoords) {
+  const ring = geoCoords[0];
+  let sumLat = 0, sumLng = 0;
+  ring.forEach(c => { sumLng += c[0]; sumLat += c[1]; });
+  return [sumLat / ring.length, sumLng / ring.length];
+}
+
+// ── Label ukuran sisi + luas (ha) per area ───────────────────────────────
+function haversineM(a, b) { // a,b = [lng, lat]
+  const R = 6378137, rad = Math.PI / 180;
+  const dLat = (b[1]-a[1])*rad, dLng = (b[0]-a[0])*rad;
+  const h = Math.sin(dLat/2)**2 + Math.cos(a[1]*rad)*Math.cos(b[1]*rad)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+}
+function geodesicAreaGeo(ring) { // ring = [[lng, lat], …]
+  const R = 6378137, rad = Math.PI / 180;
+  let area = 0; const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = ring[i], p2 = ring[(i+1)%n];
+    area += (p2[0]-p1[0])*rad*(2+Math.sin(p1[1]*rad)+Math.sin(p2[1]*rad));
+  }
+  return Math.abs(area*R*R/2);
+}
+function fmtDistM(m) { return m >= 1000 ? (m/1000).toFixed(2)+' km' : Math.round(m)+' m'; }
+function fmtHa(m2)   { return (m2/10000).toFixed(2)+' ha'; }
+
+// Hasilkan marker label (panjang tiap sisi + luas di tengah) untuk satu area
+function buildAreaLabels(geoCoords) {
+  const ring0 = geoCoords[0];
+  // buang titik penutup (sama dengan titik awal) agar tak ada sisi 0 m
+  const closed = ring0.length > 1 &&
+    ring0[0][0] === ring0[ring0.length-1][0] && ring0[0][1] === ring0[ring0.length-1][1];
+  const ring = closed ? ring0.slice(0, -1) : ring0;
+  const mk = (latlng, cls, text) => L.marker(latlng, {
+    icon: L.divIcon({ className: '', html: `<div class="${cls}">${text}</div>`,
+                      iconSize: [0, 0], iconAnchor: [0, 0] }),
+    interactive: false,
+  });
+  const out = [];
+  for (let i = 0; i < ring.length; i++) {
+    const p1 = ring[i], p2 = ring[(i+1)%ring.length];
+    out.push(mk([(p1[1]+p2[1])/2, (p1[0]+p2[0])/2], 'area-seg-label', fmtDistM(haversineM(p1, p2))));
+  }
+  out.push(mk(polyCentroid(geoCoords), 'area-center-label', fmtHa(geodesicAreaGeo(ring))));
+  return out;
+}
+
+function makePinIcon(kelas) {
+  const color = KELAS_COLOR[kelas] || '#6c757d';
+  const textColor = kelas === 'S3' ? '#212529' : '#fff';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">
+    <path d="M14 0C6.27 0 0 6.27 0 14c0 5.25 2.87 9.82 7.13 12.26L14 38l6.87-11.74A14 14 0 0 0 28 14C28 6.27 21.73 0 14 0z" fill="${color}" stroke="white" stroke-width="1.5"/>
+    <text x="14" y="15" text-anchor="middle" dominant-baseline="middle" fill="${textColor}" font-size="8" font-weight="700" font-family="system-ui,sans-serif">${kelas}</text>
+  </svg>`;
+  return L.divIcon({
+    className: '',
+    iconSize:   [28, 38],
+    iconAnchor: [14, 38],
+    popupAnchor:[0, -40],
+    html: `<div style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))">${svg}</div>`
+  });
+}
+
+function initFullMap() {
+  const indonesiaBounds = L.latLngBounds(L.latLng(-12, 93), L.latLng(8, 142));
+  const map = L.map('fullMap', {
+    maxBounds: indonesiaBounds,
+    maxBoundsViscosity: 1.0,
+    minZoom: 5,
+  });
+  window._fullMap = map;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  }).addTo(map);
+
+  fetch('/api/analysis/all-geojson')
+    .then(r => r.json())
+    .then(geojson => {
+      if (!geojson.features || geojson.features.length === 0) {
+        map.setView([-2.5489, 118.0149], 5);
+        return;
+      }
+
+      const geoLayer = L.geoJSON(geojson, {
+        style: f => ({
+          color: KELAS_COLOR[f.properties.kelas] || '#6c757d',
+          weight: 2,
+          fillOpacity: 0.35,
+          fillColor: KELAS_COLOR[f.properties.kelas] || '#6c757d',
+        }),
+        onEachFeature: (feature, lyr) => {
+          const p = feature.properties;
+          const badgeColor = { S1:'success', S2:'primary', S3:'warning', N:'danger' }[p.kelas] || 'secondary';
+          const textClass  = p.kelas === 'S3' ? 'text-dark' : '';
+          lyr.bindTooltip(
+            `<strong>${p.name}</strong><br>
+             <span class="badge bg-${badgeColor} ${textClass}">${p.kelas}</span>
+             ${KELAS_LABEL[p.kelas] || ''}<br>
+             <small>Skor: ${p.total_score}</small>`,
+            { sticky: true, direction: 'top', opacity: 0.95 }
+          );
+          lyr.on('mouseover', function () { this.setStyle({ weight: 3, fillOpacity: 0.55 }); });
+          lyr.on('mouseout',  function () { geoLayer.resetStyle(this); });
+          lyr.on('click',     function () { window.location.href = p.detail_url; });
+        }
+      });
+
+      const markerLayer = L.layerGroup();
+      geojson.features.forEach(feature => {
+        const p = feature.properties;
+        const [lat, lng] = polyCentroid(feature.geometry.coordinates);
+        const badgeColor = { S1:'success', S2:'primary', S3:'warning', N:'danger' }[p.kelas] || 'secondary';
+        const textClass  = p.kelas === 'S3' ? 'text-dark' : '';
+        const marker = L.marker([lat, lng], { icon: makePinIcon(p.kelas) });
+        marker.bindTooltip(
+          `<strong>${p.name}</strong><br>
+           <span class="badge bg-${badgeColor} ${textClass}">${p.kelas}</span>
+           ${KELAS_LABEL[p.kelas] || ''}<br>
+           <small>Skor: ${p.total_score}</small>`,
+          { direction: 'top', opacity: 0.95 }
+        );
+        marker.on('click', () => window.location.href = p.detail_url);
+        markerLayer.addLayer(marker);
+      });
+
+      // Label ukuran (sisi + luas) — tampil bersama poligon saat zoom dekat
+      const labelLayer = L.layerGroup();
+      geojson.features.forEach(feature => {
+        buildAreaLabels(feature.geometry.coordinates).forEach(m => labelLayer.addLayer(m));
+      });
+
+      geoLayer.addTo(map);
+      map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
+
+      function updateLayers() {
+        const z = map.getZoom();
+        if (z < ZOOM_THRESHOLD) {
+          if (map.hasLayer(geoLayer))    map.removeLayer(geoLayer);
+          if (map.hasLayer(labelLayer))  map.removeLayer(labelLayer);
+          if (!map.hasLayer(markerLayer)) markerLayer.addTo(map);
+        } else {
+          if (map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
+          if (!map.hasLayer(geoLayer))   geoLayer.addTo(map);
+          if (!map.hasLayer(labelLayer)) labelLayer.addTo(map);
+        }
+      }
+      map.on('zoomend', updateLayers);
+      updateLayers();
+    })
+    .catch(() => map.setView([-2.5489, 118.0149], 5));
+}
+
+// ── Single-row delete ────────────────────────────────────────────────────
+document.querySelectorAll('.delete-btn').forEach(btn => {
+  btn.addEventListener('click', async function () {
+    const id = this.dataset.id;
+    const r = await sikalConfirm({ title: 'Hapus analisis?', icon: 'warning', confirmText: 'Hapus', confirmColor: 'danger' });
+    if (!r.isConfirmed) return;
+    const res = await fetch(`/api/analysis/${id}/delete`, { method: 'POST' });
+    if (res.ok) { location.reload(); }
+    else { showNotif('Gagal menghapus.', 'danger'); }
+  });
+});
+</script>
+{% endblock %}

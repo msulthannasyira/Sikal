@@ -1,0 +1,748 @@
+{% extends "base.html" %}
+{% block title %}{{ row.name }} - SiKal{% endblock %}
+{% block page_title %}Detail Analisis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+.card-header {
+  height: 56px; padding-top: 0; padding-bottom: 0;
+  display: flex; align-items: center;
+}
+/* Semua font di card 14px, kecuali h6 di card-header tetap 1rem */
+.card, .card * { font-size: 14px; }
+.card-header h6, .card-header h6 * { font-size: 1rem; }
+/* Nama tempat (Informasi) & label kelas (Hasil Kesesuaian) → 16px */
+.informasi-box .card-body h5,
+.card #summaryLabel { font-size: 16px; }
+/* Area Analisis: map mengisi sisa ruang vertikal */
+.map-card { display: flex; flex-direction: column; }
+.map-card > .card-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.map-card #map { flex: 1; min-height: 300px; border-radius: 6px; }
+.map-card .map-meta { flex: 0 0 auto; }
+/* Label ukuran sisi + luas pada peta area */
+.area-seg-label {
+  color: #1f2937; font-size: 12px; font-weight: 600; white-space: nowrap;
+  transform: translate(-50%, -50%); display: inline-block;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+.area-center-label {
+  color: #146c43; font-size: 15px; font-weight: 700; white-space: nowrap;
+  transform: translate(-50%, -50%); display: inline-block; text-align: center;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+.card .area-seg-label { font-size: 12px; }
+.card .area-center-label { font-size: 15px; }
+/* Box Informasi: card-body tinggi tetap 170px, scroll bila perlu */
+.informasi-box { display: flex; flex-direction: column; }
+.informasi-box > .card-body { height: 195px; overflow-y: auto; }
+/* Box Hasil Kesesuaian: card-body tinggi tetap 224px */
+.hasil-box > .card-body { height: 230px; overflow-y: auto; }
+.kelas-desc-card { border-left: 5px solid; }
+.kelas-desc-card.S1 { border-color: #7B9163; background:#f1f4ee; }
+.kelas-desc-card.S2 { border-color: #3288BD; background:#eaf3f9; }
+.kelas-desc-card.S3 { border-color: #FED45C; background:#fffaf0; }
+.kelas-desc-card.N  { border-color: #D53E4F; background:#fdf0f1; }
+.param-status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.param-hint { font-size:.78rem; color:#6c757d; }
+.modal-header { height:56px; padding-top:0; padding-bottom:0; }
+.modal-footer { height:56px; padding-top:0; padding-bottom:0; }
+#logModal .modal-dialog { max-width:798px; width:798px; }
+#logModal .modal-body   { height:385px; overflow:hidden; display:flex; flex-direction:column; gap:.5rem; }
+#paramDetailModal .modal-body { height:385px; overflow-y:auto; }
+.param-card-clickable { cursor:pointer; transition:box-shadow .15s, background .15s; }
+.param-card-clickable:hover { background:#e9ecef !important; box-shadow:0 0 0 2px #0d6efd44; }
+/* Samakan gap kiri-kanan tabel dengan card-header (referensi: kelola akun) */
+.card .table > :is(thead, tbody, tfoot) > tr > :first-child { padding-left: 1rem; }
+.card .table > :is(thead, tbody, tfoot) > tr > :last-child  { padding-right: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- LEFT: Info + Pratinjau Hasil SAW -->
+  <div class="col-md-4 d-flex flex-column gap-4" style="height:591px">
+    <!-- Info Analisis -->
+    <div class="card shadow-sm informasi-box">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold">Informasi</h6>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#logModal"
+                  title="Lihat log analisis">
+            <i class="bi bi-terminal me-1"></i>Log
+          </button>
+          {% if current_user.is_admin %}
+          <a href="{{ url_for('informasi_edit', result_id=row.id) }}" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-pencil me-1"></i>Edit
+          </a>
+          {% endif %}
+          <a href="{{ url_for('informasi_pdf', result_id=row.id) }}" class="btn btn-outline-danger btn-sm"
+             title="Unduh laporan analisis dalam bentuk PDF">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+          </a>
+        </div>
+      </div>
+      <div class="card-body d-flex flex-column">
+        <h5 class="fw-bold mb-3">{{ row.name }}</h5>
+        {% if row.description %}
+        <p class="text-muted small mb-3">{{ row.description }}</p>
+        {% else %}
+        <p class="text-muted small fst-italic mb-3">Tidak ada deskripsi</p>
+        {% endif %}
+        <div class="mt-auto">
+          <p class="small text-muted mb-1">
+            Dianalisis oleh <strong>{{ row.username }}</strong> pada {{ row.created_at[:16].replace('T',' ') }}
+          </p>
+          {% if row.updated_at != row.created_at %}
+          <p class="small text-muted mb-0">Diperbarui pada {{ row.updated_at[:16].replace('T',' ') }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Pratinjau Hasil SAW -->
+    <div class="card shadow-sm h-100 hasil-box">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold">Hasil Kesesuaian</h6>
+        <button class="btn btn-link p-0 text-muted"
+                style="font-size:1.1rem" data-bs-toggle="modal" data-bs-target="#kelasInfoModal"
+                title="Penjelasan kelas kesesuaian">
+          <i class="bi bi-info-circle"></i>
+        </button>
+      </div>
+      <div class="card-body text-center py-4">
+        <div class="display-4 fw-bold mb-1">
+          <span id="summaryBadge" class="badge {{ saw.kelas|kelas_badge }} px-4 py-3 fs-3">{{ saw.kelas }}</span>
+        </div>
+        <h5 class="fw-semibold mt-3" id="summaryLabel">{{ saw.kelas_label }}</h5>
+        <hr>
+        <p class="mb-1 text-muted small">Skor SAW Total</p>
+        <h4 class="fw-bold text-success" id="summaryScore">{{ "%.4f"|format(saw.total) }}</h4>
+        <div class="progress mt-2" style="height:10px">
+          <div class="progress-bar bg-success" id="summaryProgress" data-width="{{ (saw.total * 100)|int }}"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Area Analisis (Peta) -->
+  <div class="col-md-8">
+    <div class="card shadow-sm h-100 map-card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold">Area Analisis</h6>
+      </div>
+      <div class="card-body px-3 py-2">
+        <div id="map"></div>
+        <div class="map-meta d-flex gap-3 mt-2 flex-wrap">
+          <span class="badge bg-light text-dark border fs-6">
+            Luas: <strong id="detailArea">-</strong>
+          </span>
+          <span class="badge bg-light text-dark border fs-6">
+            Keliling: <strong id="detailPerimeter">-</strong>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Penjelasan Kelas Kesesuaian (konten dari tabel `kelas`, warna/ikon = presentasi) -->
+{% set kelas_style = {
+  'S1': {'icon': 'bi-check-circle-fill', 'color': 'text-success'},
+  'S2': {'icon': 'bi-check-circle',      'color': 'text-primary'},
+  'S3': {'icon': 'bi-exclamation-circle','color': 'text-warning'},
+  'N':  {'icon': 'bi-x-circle-fill',     'color': 'text-danger'}
+} %}
+{% set ki = kelas_info[saw.kelas] %}
+{% set ks = kelas_style.get(saw.kelas, {'icon': 'bi-info-circle', 'color': 'text-secondary'}) %}
+<div class="card shadow-sm mt-4 kelas-desc-card {{ saw.kelas }}">
+  <div class="card-body py-3">
+    <div class="flex-grow-1">
+      <p class="fw-bold mb-3 {{ ks.color }}" style="font-size:16px">{{ ki.nama }} ({{ ki.kode }})</p>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="p-2 rounded bg-white border h-100">
+            <p class="fw-bold mb-1" style="font-size:16px">Potensi Lahan</p>
+            <p class="mb-0 small">{{ ki.potensi }}</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="p-2 rounded bg-white border h-100">
+            <p class="fw-bold mb-1" style="font-size:16px">Karakteristik &amp; Pembatas</p>
+            <p class="mb-0 small">{{ ki.karakteristik }}</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="p-2 rounded bg-white border h-100">
+            <p class="fw-bold mb-1" style="font-size:16px">Rekomendasi</p>
+            <p class="mb-0 small">{{ ki.rekomendasi }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Ringkasan Status Parameter -->
+{% set score_label = {0: ('Terbangun', 'dark', 'Lahan terbangun, tidak sesuai'), 1: ('Buruk', 'danger', 'Perlu perbaikan serius'), 2: ('Cukup', 'warning', 'Perlu perhatian'), 3: ('Baik', 'primary', 'Kondisi memadai'), 4: ('Optimal', 'success', 'Kondisi ideal')} %}
+{% set param_hint = {
+  'slope':          ['SRTM DEM (USGS)',   'bi-graph-down-arrow'],
+  'drainage':       ['SRTM DEM (USGS)',   'bi-droplet-half'],
+  'soil_depth':     ['SoilGrids',         'bi-layers'],
+  'soil_texture':   ['SoilGrids',         'bi-grid-3x3'],
+  'soil_type':      ['SoilGrids',         'bi-database'],
+  'lulc':           ['ESA WorldCover',    'bi-map'],
+  'precipitation':  ['CHIRPS',            'bi-cloud-rain'],
+  'temperature':    ['ERA5-Land (ECMWF)', 'bi-thermometer-half'],
+  'distance_road':  ['GHSL (JRC)',        'bi-sign-turn-right'],
+  'distance_river': ['HydroSHEDS (WWF)',  'bi-water'],
+} %}
+<div class="card shadow-sm mt-4">
+  <div class="card-header bg-white">
+    <h6 class="mb-0 fw-bold"></i>Status Parameter</h6>
+  </div>
+  <div class="card-body">
+    <div class="row g-2">
+      {% for key in criteria %}
+      {% set sc = saw.scores[key] %}
+      {% set sl = score_label[sc] %}
+      {% set ph = param_hint.get(key, ['', 'bi-info-circle']) %}
+      <div class="col-md-6">
+        <div class="d-flex align-items-center gap-2 p-2 rounded border bg-light param-card-clickable"
+             data-key="{{ key }}" data-bs-toggle="modal" data-bs-target="#paramDetailModal"
+             title="Klik untuk detail {{ criteria_labels[key] }}">
+          <i class="bi {{ ph[1] }} text-secondary"></i>
+          <div class="flex-grow-1 overflow-hidden">
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="fw-semibold small">{{ criteria_labels[key] }}</span>
+              <span class="badge bg-{{ sl[1] }} ms-1">{{ sl[0] }}</span>
+            </div>
+            <div class="progress mt-1" style="height:4px">
+              <div class="progress-bar bg-{{ sl[1] }}" data-width="{{ (sc/4*100)|int }}"></div>
+            </div>
+            <p class="param-hint mb-0 mt-1">{{ ph[0] }} &nbsp;&middot;&nbsp; Skor {{ sc }}/4</p>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+  </div>
+</div>
+
+<!-- Parameter table -->
+<div class="card shadow-sm mt-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0 fw-bold">
+      Nilai Parameter
+    </h6>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+{% set param_units = {
+  'slope':          '%',
+  'drainage':       'TWI',
+  'soil_depth':     'cm',
+  'soil_texture':   '% liat',
+  'soil_type':      'kode USDA',
+  'lulc':           'kode ESA',
+  'precipitation':  'mm/tahun',
+  'temperature':    '°C',
+  'distance_road':  'meter',
+  'distance_river': 'meter',
+} %}
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Parameter</th>
+            <th>Nilai Mentah</th>
+            <th>Satuan</th>
+            <th>Rating (1-4)</th>
+            <th>Ternormalisasi</th>
+            <th>Bobot</th>
+            <th>Nilai Terbobot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key in criteria %}
+          {% set rv = raw.get(key) %}
+          <tr data-key="{{ key }}">
+            <td class="fw-semibold">{{ criteria_labels[key] }}</td>
+            <td>
+              {% if rv is not none %}
+                <code>{{ rv if rv is string else "%.4f"|format(rv) }}</code>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td><small class="text-muted">{{ param_units.get(key, '—') }}</small></td>
+            <td id="scoreCell-{{ key }}">
+              <div class="d-flex align-items-center gap-2">
+                <span class="fw-semibold score-val">{{ saw.scores[key] }}</span>
+                <div class="progress flex-grow-1" style="height:6px;max-width:60px">
+                  <div class="progress-bar bg-success score-bar"
+                       data-width="{{ (saw.scores[key] / 4 * 100)|int }}"></div>
+                </div>
+              </div>
+            </td>
+            <td id="normCell-{{ key }}" class="norm-val">{{ saw.normalized[key] }}</td>
+            <td>{{ saw.weights[key] }}</td>
+            <td id="weightedCell-{{ key }}" class="fw-semibold text-success weighted-val">{{ saw.weighted[key] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light">
+          <tr>
+            <td colspan="6" class="fw-bold text-end">Total Skor SAW</td>
+            <td class="fw-bold text-success fs-5" id="totalCell">{{ "%.4f"|format(saw.total) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Parameter detail modal -->
+<div class="modal fade" id="paramDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title fw-bold" id="paramModalTitle"></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="paramModalBody"></div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Kelas info modal -->
+<div class="modal fade" id="kelasInfoModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title fw-bold">Kelas Kesesuaian Lahan</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pb-2">
+        {% set kelas_badge = {
+          'S1': ['bg-success', 'text-success'],
+          'S2': ['bg-primary', 'text-primary'],
+          'S3': ['bg-warning text-dark', 'text-warning'],
+          'N':  ['bg-danger', 'text-danger']
+        } %}
+        <div class="row g-3">
+          {% for kode in ['S1', 'S2', 'S3', 'N'] %}
+          {% set ki = kelas_info[kode] %}
+          {% set kb = kelas_badge.get(kode, ['bg-secondary', 'text-secondary']) %}
+          <div class="col-md-6 d-flex">
+            <div class="p-3 rounded kelas-desc-card {{ kode }} w-100">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge {{ kb[0] }} fw-bold px-2">{{ ki.kode }}</span>
+                <span class="fw-bold {{ kb[1] }}">{{ ki.nama }}</span>
+              </div>
+              <p class="small mb-1"><span class="text-muted">Skor SAW</span> <strong>{{ ki.rentang }}</strong></p>
+              <p class="small text-muted mb-0">{{ ki.deskripsi }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="text-muted small mt-3 mb-1"><i class="bi bi-info-circle me-1"></i>Skor dihitung menggunakan metode <strong>Simple Additive Weighting (SAW)</strong> dengan 10 kriteria berbobot sama.</p>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal fade" id="logModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Log Analisis</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <div id="logRunBar" class="d-flex align-items-center gap-2 mb-3" style="display:none!important">
+          <span class="text-muted small fw-semibold">Run:</span>
+          <div id="logRunBtns" class="d-flex gap-1 flex-wrap"></div>
+        </div>
+        <div id="logTerminal" style="
+          background:#0d1117; color:#c9d1d9; font-family:'Cascadia Code','Consolas','Courier New',monospace;
+          font-size:12px; line-height:1.7; padding:1rem 1.25rem; border-radius:8px;
+          flex:1; min-height:0; overflow-y:auto; white-space:pre-wrap; word-break:break-word;
+        ">
+          <span class="text-secondary fst-italic">Memuat log…</span>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script type="application/json" id="page-data">
+{"polygon": {{ polygon | tojson }}, "resultId": {{ row.id }}, "isAdmin": {{ 'true' if current_user.is_admin else 'false' }}, "sawScores": {{ saw.scores | tojson }}}
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Apply data-width to progress bars (avoids Jinja2 in style attributes)
+document.querySelectorAll('[data-width]').forEach(el => {
+  el.style.width = el.dataset.width + '%';
+});
+
+const _pd = JSON.parse(document.getElementById('page-data').textContent);
+const polygon = _pd.polygon;
+const resultId = _pd.resultId;
+const isAdmin = _pd.isAdmin;
+const sawScores = _pd.sawScores;
+
+// ── Parameter detail data ─────────────────────────────────────────────
+const PARAM_DETAIL = {
+  slope: {
+    label: 'Kelerengan', unit: '%', icon: 'bi-graph-down-arrow',
+    desc: 'Kelerengan lahan menentukan kemampuan lahan menahan air irigasi dan mencegah erosi. Sawah padi membutuhkan lahan datar hingga landai agar dapat tergenang air secara merata.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: '≤ 3%',   note: 'Datar, ideal untuk sawah' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: '3 - 8%', note: 'Landai, masih cocok' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: '8 - 30%',note: 'Agak miring, perlu terasering' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: '> 30%',  note: 'Curam, tidak cocok untuk sawah' },
+    ]
+  },
+  drainage: {
+    label: 'Drainase (TWI)', unit: 'TWI', icon: 'bi-droplet-half',
+    desc: 'Topographic Wetness Index (TWI) mengukur potensi genangan berdasarkan topografi. Nilai tinggi menunjukkan area yang cenderung basah/tergenang, cocok untuk padi sawah.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: 'TWI > 5.5',      note: 'Sangat berpotensi tergenang' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: 'TWI 3.5 - 5.5',  note: 'Cukup berpotensi tergenang' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: 'TWI 1.5 - 3.5',  note: 'Drainase agak baik' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: 'TWI ≤ 1.5',      note: 'Drainase terlalu baik, sulit tergenang' },
+    ]
+  },
+  soil_depth: {
+    label: 'Kedalaman Tanah', unit: 'cm', icon: 'bi-layers',
+    desc: 'Kedalaman efektif tanah (dari SoilGrids) menentukan ruang tumbuh akar tanaman. Kedalaman yang cukup memungkinkan akar berkembang optimal dan menyerap hara.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: '> 50 cm', note: 'Dalam, pertumbuhan akar optimal' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: '40 - 50 cm', note: 'Cukup dalam, akar tumbuh baik' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: '25 - 40 cm', note: 'Sedang, sedikit terbatas' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: '< 25 cm', note: 'Dangkal, pembatas pertumbuhan' },
+    ]
+  },
+  soil_texture: {
+    label: 'Tekstur Tanah', unit: '% liat', icon: 'bi-grid-3x3',
+    desc: 'Kandungan liat menentukan kemampuan tanah menahan air. Tanah berliat tinggi cocok untuk sawah karena mengurangi perkolasi sehingga air dapat dipertahankan.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: '≥ 30% liat', note: 'Halus/agak halus, menahan air dengan baik' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: '18 - 30% liat', note: 'Sedang, cukup menahan air' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: '10 - 18% liat', note: 'Agak kasar, perlu manajemen air lebih' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: '< 10% liat', note: 'Kasar/pasiran, air cepat hilang' },
+    ]
+  },
+  soil_type: {
+    label: 'Jenis Tanah', unit: 'kode USDA', icon: 'bi-database',
+    desc: 'Jenis tanah berdasarkan klasifikasi USDA great-group. Tanah Inceptisol umum ditemukan di dataran rendah Asia Tenggara dan sangat cocok untuk pertanian padi.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: 'Kode 160-230', note: 'Cambisols (Inceptisol) — paling umum di sawah' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: 'Kode 80-120', note: 'Fluvisols (Entisol) — masih sesuai' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: 'Kode 380-433', note: 'Acrisols (Ultisol) — perlu pengelolaan hara' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: 'Kode lainnya', note: 'Kurang sesuai untuk padi sawah' },
+    ]
+  },
+  lulc: {
+    label: 'Penggunaan Lahan', unit: 'kode ESA', icon: 'bi-map',
+    desc: 'Penggunaan lahan saat ini berdasarkan ESA WorldCover. Lahan yang sudah berupa sawah/pertanian lebih mudah dan murah untuk dikonversi dibanding lahan terbangun.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: 'Kode 40 (Cropland)', note: 'Sudah lahan pertanian' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: 'Kode 20/30/60', note: 'Semak/Padang rumput/Lahan terbuka' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: 'Kode 10/90/95', note: 'Hutan/Vegetasi rawa — perlu konversi' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: 'Kode 50/70/80', note: 'Terbangun/Tidak bervegetasi/Badan air' },
+    ]
+  },
+  precipitation: {
+    label: 'Curah Hujan', unit: 'mm/tahun', icon: 'bi-cloud-rain',
+    desc: 'Curah hujan tahunan mencerminkan ketersediaan air alami. Padi sawah membutuhkan air yang cukup sepanjang tahun untuk pertumbuhan optimal.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: '> 2000 mm/tahun', note: 'Curah hujan sangat melimpah' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: '1000 - 2000 mm/tahun', note: 'Cukup, mungkin perlu irigasi tambahan' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: '< 1000 mm/tahun', note: 'Kurang, irigasi intensif diperlukan' },
+    ]
+  },
+  temperature: {
+    label: 'Temperatur', unit: '°C', icon: 'bi-thermometer-half',
+    desc: 'Suhu rata-rata tahunan mempengaruhi laju fotosintesis dan perkembangan tanaman padi. Suhu terlalu rendah atau terlalu tinggi akan menghambat pertumbuhan.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: '24 - 29 °C', note: 'Suhu ideal untuk pertumbuhan padi' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: '22-24 °C atau 29-32 °C', note: 'Sedikit di luar optimal, masih baik' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: '18-22 °C atau 32-35 °C', note: 'Agak dingin/panas, pertumbuhan terbatas' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: '< 18 °C atau > 35 °C', note: 'Ekstrem, tidak cocok untuk padi' },
+    ]
+  },
+  distance_road: {
+    label: 'Jarak dari Jalan', unit: 'meter', icon: 'bi-sign-turn-right',
+    desc: 'Jarak ke infrastruktur jalan terdekat mempengaruhi aksesibilitas lahan untuk pengangkutan hasil panen, distribusi pupuk, dan operasional pertanian.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: '≤ 1.000 m', note: 'Sangat dekat, aksesibilitas tinggi' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: '1.000 - 2.000 m', note: 'Cukup dekat, aksesibilitas baik' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: '2.000 - 4.000 m', note: 'Agak jauh, biaya angkut lebih tinggi' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: '> 4.000 m', note: 'Jauh, aksesibilitas rendah' },
+    ]
+  },
+  distance_river: {
+    label: 'Jarak dari Sungai', unit: 'meter', icon: 'bi-water',
+    desc: 'Jarak ke sungai terdekat menentukan kemudahan akses sumber air untuk irigasi. Semakin dekat dengan sungai, semakin mudah pengairan lahan.',
+    thresholds: [
+      { rating: 4, label: 'Optimal', color: 'success', range: '≤ 500 m', note: 'Sangat dekat sumber air' },
+      { rating: 3, label: 'Baik',    color: 'primary', range: '500 - 1.000 m', note: 'Dekat, irigasi relatif mudah' },
+      { rating: 2, label: 'Cukup',   color: 'warning', range: '1.000 - 2.000 m', note: 'Agak jauh, perlu saluran irigasi' },
+      { rating: 1, label: 'Buruk',   color: 'danger',  range: '> 2.000 m', note: 'Jauh, irigasi sulit/mahal' },
+    ]
+  },
+};
+
+const SCORE_COLORS = { 1:'danger', 2:'warning', 3:'primary', 4:'success' };
+const SCORE_LABELS = { 1:'Buruk', 2:'Cukup', 3:'Baik', 4:'Optimal' };
+const SCORE_HEX    = { 1:'#D53E4F', 2:'#FED45C', 3:'#3288BD', 4:'#7B9163' };
+const SCORE_BGTINT = { 1:'rgba(213,62,79,.08)', 2:'rgba(254,212,92,.18)', 3:'rgba(50,136,189,.08)', 4:'rgba(123,145,99,.08)' };
+
+
+// ── Parameter detail modal ────────────────────────────────────────────
+const paramDetailModal = document.getElementById('paramDetailModal');
+paramDetailModal.addEventListener('show.bs.modal', function (e) {
+  const key = e.relatedTarget.dataset.key;
+  const d   = PARAM_DETAIL[key];
+  if (!d) return;
+
+  const score = sawScores[key] || 1;
+  const col   = SCORE_COLORS[score];
+  const lbl   = SCORE_LABELS[score];
+
+  document.getElementById('paramModalTitle').innerHTML =
+    `${d.label} <small class="text-muted fw-normal">(${d.unit})</small>`;
+
+  const badgeStyle = r => `background-color:${SCORE_HEX[r]||'#6c757d'};color:${r==2?'#212529':'#fff'}`;
+
+  const rows = d.thresholds.map(t => {
+    const active = t.rating === score;
+    return `<tr class="${active ? 'table-'+t.color : ''}">
+      <td><span class="badge" style="${badgeStyle(t.rating)}">${t.label}</span></td>
+      <td class="fw-semibold">${t.range}</td>
+      <td class="text-muted small">${t.note}</td>
+      <td class="text-center">${active ? '<i class="bi bi-check2-circle fw-bold" style="color:'+SCORE_HEX[score]+'"></i>' : ''}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('paramModalBody').innerHTML = `
+    <p class="text-muted small mb-3">${d.desc}</p>
+    <div class="param-score-card d-flex align-items-center gap-2 mb-3 p-2 rounded" style="background:${SCORE_BGTINT[score]};border:1px solid ${SCORE_HEX[score]}">
+      <span class="badge fs-6 px-3" style="${badgeStyle(score)}">${lbl}</span>
+      <div>
+        <div class="fw-semibold">Skor saat ini: ${score}/4</div>
+        <div class="text-muted small">${d.thresholds.find(t=>t.rating===score)?.range || ''}</div>
+      </div>
+    </div>
+    <table class="table table-sm table-bordered mb-0">
+      <thead class="table-light">
+        <tr><th>Level</th><th>Rentang Nilai</th><th>Keterangan</th><th class="text-center">Nilai Saat Ini</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+});
+
+const map = L.map('map', {
+  maxBounds: L.latLngBounds(L.latLng(-12, 93), L.latLng(8, 142)),
+  maxBoundsViscosity: 1.0,
+  minZoom: 5,
+});
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+const latlngs = polygon.map(c => [c[1], c[0]]);
+const poly = L.polygon(latlngs, { color: '#7B9163', fillOpacity: 0.25 }).addTo(map);
+map.fitBounds(poly.getBounds(), { padding: [20, 20] });
+
+// ── Geodesic helpers ──────────────────────────────────
+function haversineDist(p1, p2) {
+  const R = 6378137, rad = Math.PI / 180;
+  const dLat = (p2[0]-p1[0])*rad, dLng = (p2[1]-p1[1])*rad;
+  const a = Math.sin(dLat/2)**2 + Math.cos(p1[0]*rad)*Math.cos(p2[0]*rad)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function geodesicAreaLL(pts) {
+  const R = 6378137, rad = Math.PI / 180;
+  let area = 0; const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = pts[i], p2 = pts[(i+1)%n];
+    area += (p2[1]-p1[1])*rad*(2+Math.sin(p1[0]*rad)+Math.sin(p2[0]*rad));
+  }
+  return Math.abs(area*R*R/2);
+}
+function fmtM(m)   { return m >= 1000 ? (m/1000).toFixed(2)+' km' : Math.round(m)+' m'; }
+function fmtHa(m2) { return (m2/10000).toFixed(2)+' ha'; }
+
+// ── Label ukuran sisi + luas (ha) di atas peta ────────────────
+// Saat zoom di bawah ambang ini, label diganti satu pin lokasi di tengah area
+// (sama seperti perilaku pin pada peta informasi kesesuaian).
+const MEASURE_ZOOM_THRESHOLD = 15;
+let areaLabels = [], areaPin = null;
+
+function clearAreaLabels() {
+  areaLabels.forEach(l => map.removeLayer(l)); areaLabels = [];
+  if (areaPin) { map.removeLayer(areaPin); areaPin = null; }
+}
+function makeMapLabel(latlng, cls, text) {
+  return L.marker(latlng, {
+    icon: L.divIcon({ className: '', html: `<div class="${cls}">${text}</div>`,
+                      iconSize: [0, 0], iconAnchor: [0, 0] }),
+    interactive: false,
+  });
+}
+function makeAreaPin(latlng) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">
+    <path d="M14 0C6.27 0 0 6.27 0 14c0 5.25 2.87 9.82 7.13 12.26L14 38l6.87-11.74A14 14 0 0 0 28 14C28 6.27 21.73 0 14 0z" fill="#198754" stroke="white" stroke-width="1.5"/>
+    <circle cx="14" cy="14" r="5" fill="#fff"/>
+  </svg>`;
+  return L.marker(latlng, {
+    icon: L.divIcon({ className: '', iconSize: [28, 38], iconAnchor: [14, 38],
+                      html: `<div style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))">${svg}</div>` }),
+    interactive: false,
+  });
+}
+function updateAreaLabelVisibility() {
+  if (areaLabels.length === 0) return;
+  const far = map.getZoom() < MEASURE_ZOOM_THRESHOLD;
+  areaLabels.forEach(l => { if (far) map.removeLayer(l); else l.addTo(map); });
+  if (areaPin) { if (far) areaPin.addTo(map); else map.removeLayer(areaPin); }
+}
+map.on('zoomend', updateAreaLabelVisibility);
+
+function renderAreaLabels(ring) {
+  clearAreaLabels();
+  for (let i = 0; i < ring.length; i++) {
+    const p1 = ring[i], p2 = ring[(i+1)%ring.length];
+    const mid = L.latLng((p1[0]+p2[0])/2, (p1[1]+p2[1])/2);
+    areaLabels.push(makeMapLabel(mid, 'area-seg-label', fmtM(haversineDist(p1, p2))));
+  }
+  const c = ring.reduce((s, p) => [s[0]+p[0], s[1]+p[1]], [0, 0]);
+  const center = L.latLng(c[0]/ring.length, c[1]/ring.length);
+  areaLabels.push(makeMapLabel(center, 'area-center-label', fmtHa(geodesicAreaLL(ring))));
+  areaPin = makeAreaPin(center);
+  updateAreaLabelVisibility();
+}
+
+// ── Hitung & tampilkan luas + keliling ───────────────────────
+(function(){
+  const ring = latlngs.slice(0, latlngs[0][0]===latlngs[latlngs.length-1][0] &&
+                                  latlngs[0][1]===latlngs[latlngs.length-1][1]
+                                  ? latlngs.length-1 : latlngs.length);
+  const area = geodesicAreaLL(ring);
+  let perim = 0;
+  for (let i = 0; i < ring.length; i++) perim += haversineDist(ring[i], ring[(i+1)%ring.length]);
+  document.getElementById('detailArea').textContent      = fmtHa(area);
+  document.getElementById('detailPerimeter').textContent = fmtM(perim);
+  renderAreaLabels(ring);
+})();
+
+// ── Log Modal ─────────────────────────────────────────────────────────
+const LOG_COLORS = {
+  'DEBUG':    '#79c0ff',
+  'INFO':     '#3fb950',
+  'WARNING':  '#d29922',
+  'ERROR':    '#f85149',
+  'CRITICAL': '#db61a2',
+};
+const LOG_LEVEL_PAD = { 'DEBUG':5, 'INFO':4, 'WARNING':7, 'ERROR':5, 'CRITICAL':8 };
+
+function _esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Pewarnaan pesan log agar mudah dibaca (tetap kalem):
+//  • tag [GEE]/[ANALISIS]/[SAW]  → biru
+//  • nilai setelah '='           → emas lembut
+//  • baris "sumber: …"           → abu-abu miring
+function colorizeMessage(msg) {
+  let s = _esc(msg);
+  s = s.replace(/(=\s*)(.+)$/, '$1<span style="color:#e3b341">$2</span>');
+  s = s.replace(/(sumber:.*)$/, '<span style="color:#8b949e;font-style:italic">$1</span>');
+  s = s.replace(/^(\s*)(\[[^\]]+\])/, '$1<span style="color:#58a6ff;font-weight:600">$2</span>');
+  return s;
+}
+
+function renderLogs(logs) {
+  const term = document.getElementById('logTerminal');
+  if (!logs.length) {
+    term.innerHTML = '<span style="color:#8b949e;font-style:italic">Tidak ada log untuk run ini.</span>';
+    return;
+  }
+  term.innerHTML = logs.map(r => {
+    const col   = LOG_COLORS[r.level] || '#c9d1d9';
+    const pad   = (LOG_LEVEL_PAD[r.level] || r.level.length);
+    const lvl   = r.level.padEnd(pad + 3);
+    return `<span style="color:#8b949e">${_esc(r.logged_at)}</span>  ` +
+           `<span style="color:${col};font-weight:600">${_esc(lvl)}</span>  ` +
+           `<span>${colorizeMessage(r.message)}</span>`;
+  }).join('\n');
+  term.scrollTop = term.scrollHeight;
+}
+
+function loadLogRun(resultId, run) {
+  const term = document.getElementById('logTerminal');
+  term.innerHTML = '<span style="color:#8b949e;font-style:italic">Memuat…</span>';
+  fetch(`/api/analysis/${resultId}/logs?run=${run}`)
+    .then(r => r.json())
+    .then(d => renderLogs(d.logs || []))
+    .catch(() => { term.textContent = 'Gagal memuat log.'; });
+
+  document.querySelectorAll('#logRunBtns .btn').forEach(b => {
+    b.classList.toggle('btn-secondary', +b.dataset.run === run);
+    b.classList.toggle('btn-outline-secondary', +b.dataset.run !== run);
+  });
+}
+
+document.getElementById('logModal').addEventListener('show.bs.modal', function () {
+  const resultId = _pd.resultId;
+  const term     = document.getElementById('logTerminal');
+  const runBar   = document.getElementById('logRunBar');
+  const runBtns  = document.getElementById('logRunBtns');
+
+  term.innerHTML   = '<span style="color:#8b949e;font-style:italic">Memuat log…</span>';
+  runBar.style.display = 'none';
+  runBtns.innerHTML = '';
+
+  fetch(`/api/analysis/${resultId}/logs`)
+    .then(r => r.json())
+    .then(d => {
+      const runs = d.runs || [];
+      if (!runs.length) {
+        term.innerHTML = '<span style="color:#8b949e;font-style:italic">Belum ada log. Log akan muncul setelah analisis dijalankan.</span>';
+        return;
+      }
+      if (runs.length > 1) {
+        runBar.style.display = '';
+        runs.forEach(run => {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-outline-secondary btn-sm';
+          btn.dataset.run = run;
+          btn.textContent = `Run ${run}`;
+          btn.onclick = () => loadLogRun(resultId, run);
+          runBtns.appendChild(btn);
+        });
+      }
+      loadLogRun(resultId, runs[runs.length - 1]);
+    })
+    .catch(() => { term.textContent = 'Gagal memuat log.'; });
+});
+
+
+</script>
+{% endblock %}

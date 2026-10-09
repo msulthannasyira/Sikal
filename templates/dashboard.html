@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - SiKal{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+  .content-body { display: flex; flex-direction: column; }
+  .content-body .card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .content-body .card .card-body { flex: 1; overflow-y: auto; }
+
+  /* Force 14px for all text on dashboard — keep stat numbers, titles & icons */
+  .stat-card, .stat-card *,
+  .quick-action-card, .quick-action-card *,
+  .card, .card * { font-size: 14px; }
+  /* Align first/last table cells with card-header horizontal padding */
+  .card .table > :is(thead, tbody) > tr > :first-child { padding-left: 1rem; }
+  .card .table > :is(thead, tbody) > tr > :last-child  { padding-right: 1rem; }
+
+  /* Consistent badge width for kelas column (S1, S2, S3, N) */
+  .card .table tbody .badge {
+    display: inline-block; min-width: 32px; text-align: center;
+  }
+
+  .card .table thead th { text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
+
+  /* Preserved sizes */
+  .stat-card .stat-value { font-size: 2rem; }
+  .stat-card .stat-icon, .stat-card .stat-icon * { font-size: 2rem; }
+  .stat-card .stat-label { font-size: 1rem; }
+  .quick-action-card .fw-semibold { font-size: 1rem; }
+  .card-header h6, .card-header h6 * { font-size: 1rem; }
+  .quick-action-card .fs-3 { font-size: 1.75rem; }
+  .card .fs-2 { font-size: 1.5rem; }
+
+  /* Banner carousel (hero) — auto-scroll banner design */
+  .banner-carousel {
+    position: relative; overflow: hidden;
+    width: 100%; aspect-ratio: 3000 / 659;
+    border-radius: .25rem; box-shadow: var(--shadow);
+    background: #eef1ea;
+  }
+  .banner-track {
+    display: flex; height: 100%;
+    transition: transform .7s ease-in-out;
+  }
+  .banner-slide { flex: 0 0 100%; height: 100%; }
+  .banner-slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .banner-dots {
+    position: absolute; left: 0; right: 0; bottom: 10px; z-index: 2;
+    display: flex; justify-content: center; gap: 8px;
+  }
+  .banner-dots button {
+    width: 9px; height: 9px; padding: 0; border: none; border-radius: 50%;
+    background: rgba(255, 255, 255, .55); cursor: pointer;
+    transition: background .2s, transform .2s;
+  }
+  .banner-dots button.active { background: #fff; transform: scale(1.25); }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Banner carousel (hero) -->
+<div class="banner-carousel mb-4" id="bannerCarousel">
+  <div class="banner-track" id="bannerTrack">
+    <div class="banner-slide"><img src="{{ url_for('static', filename='images/banner1.png') }}" alt="SIKAL - Sistem Analisis Kesesuaian Lahan"></div>
+    <div class="banner-slide"><img src="{{ url_for('static', filename='images/banner2.png') }}" alt="Asta Cita"></div>
+    <div class="banner-slide"><img src="{{ url_for('static', filename='images/banner3.png') }}" alt="Satu Data Tentara Nasional Indonesia"></div>
+  </div>
+  <div class="banner-dots" id="bannerDots"></div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Stat cards -->
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card stat-card--green">
+      <div class="stat-icon"><i class="bi bi-map-fill"></i></div>
+      <div>
+        <div class="stat-value">{{ total }}</div>
+        <div class="stat-label">Total Analisis</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card stat-card--blue">
+      <div class="stat-icon"><i class="bi bi-check-circle-fill"></i></div>
+      <div>
+        <div class="stat-value">{{ kelas_dist.get('S1', 0) }}</div>
+        <div class="stat-label">Sangat Sesuai (S1)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card stat-card--yellow">
+      <div class="stat-icon"><i class="bi bi-dash-circle-fill"></i></div>
+      <div>
+        <div class="stat-value">{{ kelas_dist.get('S2', 0) + kelas_dist.get('S3', 0) }}</div>
+        <div class="stat-label">Cukup / Marginal</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card stat-card--gray">
+      <div class="stat-icon"><i class="bi bi-people-fill"></i></div>
+      <div>
+        <div class="stat-value">{{ user_count }}</div>
+        <div class="stat-label">Total Pengguna</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick actions -->
+<div class="row g-3 mb-4">
+  {% if current_user.is_admin %}
+  <div class="col-md-4">
+    <a href="{{ url_for('analisis') }}" class="quick-action-card text-decoration-none">
+      <i class="bi bi-map-fill text-success fs-3 mb-2"></i>
+      <div class="fw-semibold">Mulai Analisis Lahan</div>
+      <small class="text-muted">Gambar area dan jalankan analisis</small>
+    </a>
+  </div>
+  {% endif %}
+  {% if current_user.is_admin %}
+  <div class="col-md-4">
+    <a href="{{ url_for('informasi') }}" class="quick-action-card text-decoration-none">
+      <i class="bi bi-clipboard-data-fill text-primary fs-3 mb-2"></i>
+      <div class="fw-semibold">Lihat Informasi Kesesuaian</div>
+      <small class="text-muted">Tampilkan seluruh hasil analisis</small>
+    </a>
+  </div>
+  {% endif %}
+  {% if current_user.is_admin %}
+  <div class="col-md-4">
+    <a href="{{ url_for('buat_akun') }}" class="quick-action-card text-decoration-none">
+      <i class="bi bi-person-plus-fill text-warning fs-3 mb-2"></i>
+      <div class="fw-semibold">Kelola Akun Pengguna</div>
+      <small class="text-muted">Tambah atau lihat daftar pengguna</small>
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Recent analyses -->
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center" style="height: 56px; padding-top: 0; padding-bottom: 0;">
+    <h6 class="mb-0 fw-bold">Analisis Terbaru</h6>
+    <a href="{{ url_for('informasi') }}" class="btn btn-sm btn-outline-secondary">Lihat Semua</a>
+  </div>
+  <div class="card-body p-0">
+    {% if recent %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Nama Analisis</th>
+            <th>Oleh</th>
+            <th>Kelas</th>
+            <th>Skor SAW</th>
+            <th>Tanggal</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in recent %}
+          <tr>
+            <td class="fw-semibold">{{ r.name }}</td>
+            <td>{{ r.username }}</td>
+            <td>
+              <span class="badge {{ r.kelas|kelas_badge }}">{{ r.kelas }}</span>
+            </td>
+            <td>{{ "%.3f"|format(r.total_score) }}</td>
+            <td>{{ r.created_at[:16] }}</td>
+            <td class="text-end pe-3">
+              <a href="{{ url_for('informasi_detail', result_id=r.id) }}"
+                 class="btn btn-sm btn-outline-secondary" title="Detail">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+      Belum ada data analisis
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Banner carousel: auto-scroll ke kanan, mentok kanan balik ke awal ──
+(function () {
+  const root  = document.getElementById('bannerCarousel');
+  const track = document.getElementById('bannerTrack');
+  const dotsW = document.getElementById('bannerDots');
+  if (!root || !track) return;
+
+  const n = track.children.length;
+  let idx = 0, timer = null;
+  const INTERVAL = 4500;
+
+  const dots = [];
+  for (let i = 0; i < n; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Banner ' + (i + 1));
+    b.addEventListener('click', () => { go(i); restart(); });
+    dotsW.appendChild(b);
+    dots.push(b);
+  }
+
+  function go(i) {
+    idx = (i + n) % n;                          // mentok kanan → kembali ke 0
+    track.style.transform = `translateX(-${idx * 100}%)`;
+    dots.forEach((d, j) => d.classList.toggle('active', j === idx));
+  }
+  function restart() { clearInterval(timer); timer = setInterval(() => go(idx + 1), INTERVAL); }
+
+  go(0);
+  restart();
+  // Jeda saat kursor di atas banner
+  root.addEventListener('mouseenter', () => clearInterval(timer));
+  root.addEventListener('mouseleave', restart);
+})();
+</script>
+{% endblock %}

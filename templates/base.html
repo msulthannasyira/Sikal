@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}SiKal - Analisis Kesesuaian Lahan{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo_white.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <style>
+    /* Konfirmasi SweetAlert: font ringkas (selaras dialog hapus) + ikon animasi lebih kecil */
+    .swal2-popup        { padding: 1.5rem 1.25rem 1.25rem; }
+    .swal2-icon         { font-size: 0.58em; margin: 0.4em auto 0.9em; }
+    .swal2-title        { font-size: 1rem; font-weight: 500; color: #212529; padding: 0; line-height: 1.5; }
+    .swal2-html-container{ font-size: 0.9rem; }
+    .swal2-actions      { margin-top: 1.25rem; gap: 0.5rem; }
+  </style>
+  {% block extra_css %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
+</head>
+<body>
+<div class="app-wrapper" id="wrapper">
+  <script>
+    // Terapkan status sidebar (mini/full) tersimpan sedini mungkin agar tidak berkedip.
+    // Hanya di desktop; di mobile sidebar selalu mulai tertutup.
+    if (window.innerWidth > 768 && localStorage.getItem('sidebarCollapsed') === '1') {
+      document.getElementById('wrapper').classList.add('sidebar-collapsed');
+    }
+  </script>
+
+  <!-- ── Sidebar ── -->
+  <nav id="sidebar">
+    <div class="sidebar-brand">
+      <img src="{{ url_for('static', filename='images/logo_white.png') }}" alt="Logo" style="height:40px;width:auto;object-fit:contain;flex-shrink:0;">
+      <span>SIKAL</span>
+    </div>
+
+    <ul class="sidebar-menu">
+      <li>
+        <a href="{{ url_for('dashboard') }}"
+           class="{% if request.endpoint == 'dashboard' %}active{% endif %}"
+           title="Dashboard">
+          <i class="bi bi-grid-fill"></i><span>Dashboard</span>
+        </a>
+      </li>
+      {% if current_user.is_admin %}
+      <li>
+        <a href="{{ url_for('analisis') }}"
+           class="{% if request.endpoint == 'analisis' %}active{% endif %}"
+           title="Analisis Lahan">
+          <i class="bi bi-map-fill"></i><span>Analisis Lahan</span>
+        </a>
+      </li>
+      {% endif %}
+      <li>
+        <a href="{{ url_for('permintaan') }}"
+           class="{% if request.endpoint in ['permintaan', 'permintaan_baru'] %}active{% endif %}"
+           title="{% if current_user.is_admin %}Permintaan Analisis{% else %}Permintaan Saya{% endif %}">
+          <i class="bi bi-inbox-fill"></i>
+          <span>{% if current_user.is_admin %}Permintaan Analisis{% else %}Permintaan Saya{% endif %}</span>
+          {% if current_user.is_admin and pending_requests_count > 0 %}
+          <span class="badge bg-danger rounded-pill ms-auto">{{ pending_requests_count }}</span>
+          {% endif %}
+        </a>
+      </li>
+      <li>
+        <a href="{{ url_for('informasi') }}"
+           class="{% if request.endpoint in ['informasi', 'informasi_detail', 'informasi_edit'] %}active{% endif %}"
+           title="Informasi Kesesuaian">
+          <i class="bi bi-clipboard-data-fill"></i><span>Informasi Kesesuaian</span>
+        </a>
+      </li>
+      <li>
+        <a href="{{ url_for('akun') }}"
+           class="{% if request.endpoint == 'akun' %}active{% endif %}"
+           title="Akun Saya">
+          <i class="bi bi-person-fill"></i><span>Akun Saya</span>
+        </a>
+      </li>
+      {% if current_user.is_admin %}
+      <li>
+        <a href="{{ url_for('buat_akun') }}"
+           class="{% if request.endpoint in ['buat_akun', 'kelola_buat', 'kelola_edit'] %}active{% endif %}"
+           title="Kelola Akun">
+          <i class="bi bi-people-fill"></i><span>Kelola Akun</span>
+        </a>
+      </li>
+      {% endif %}
+    </ul>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <i class="bi bi-person-circle"></i>
+        <div>
+          <span class="user-name">{{ current_user.username }}</span>
+          <span class="user-role badge bg-{{ 'success' if current_user.is_admin else 'secondary' }}">
+            {{ current_user.role|capitalize }}
+          </span>
+        </div>
+      </div>
+      <a href="{{ url_for('logout') }}" class="btn-logout" title="Logout"
+         data-confirm-link="Keluar dari akun?" data-confirm-yes="Logout">
+        <i class="bi bi-box-arrow-right"></i>
+      </a>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ── -->
+  <div id="main-content">
+    <!-- Top bar -->
+    <header class="topbar">
+      <button id="sidebarToggle" class="btn btn-link text-dark p-0 me-3">
+        <i class="bi bi-list fs-5"></i>
+      </button>
+      <h6 class="topbar-title mb-0 fw-bold">{% block page_title %}{% endblock %}</h6>
+    </header>
+
+    <!-- Flash messages (ditampilkan sebagai toast SweetAlert) + page content -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <script id="flash-data" type="application/json">{{ messages | tojson }}</script>
+      {% endif %}
+    {% endwith %}
+    <div class="content-body">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+  // ── Warna semantik (ikon & tombol): peringatan=kuning, simpan=hijau, hapus=merah ──
+  window.SIKAL_COLORS = { danger: '#D53E4F', success: '#7B9163', warning: '#FED45C', primary: '#3288BD', info: '#3288BD' };
+
+  // ── Konfirmasi SweetAlert konsisten (kotak kecil seragam + tombol outline) ──
+  // Pakai: sikalConfirm({title, confirmText, confirmColor}) → Promise (Swal result)
+  window.sikalConfirm = function (opts) {
+    opts = opts || {};
+    const color = opts.confirmColor || 'danger';
+    return Swal.fire({
+      title: opts.title || 'Lanjutkan tindakan ini?',
+      text: opts.text,
+      icon: opts.icon || 'question',
+      iconColor: opts.iconColor || SIKAL_COLORS[color],
+      showCancelButton: true,
+      buttonsStyling: false,
+      focusConfirm: false,
+      width: '22rem',
+      customClass: {
+        popup: 'rounded-3',
+        confirmButton: 'btn btn-outline-' + color + ' btn-sm mx-1',
+        cancelButton: 'btn btn-outline-secondary btn-sm mx-1'
+      },
+      confirmButtonText: opts.confirmText || 'Ya',
+      cancelButtonText: opts.cancelText || 'Batal'
+    });
+  };
+
+  // Konfirmasi deklaratif lewat atribut:
+  //  • <form data-confirm="Teks?" [data-confirm-color=success] [data-confirm-yes=Simpan]>
+  //  • <a data-confirm-link="Teks?" href="...">
+  document.addEventListener('submit', function (e) {
+    const form = e.target;
+    if (form.matches('[data-confirm]') && form.dataset._confirmed !== '1') {
+      e.preventDefault();
+      sikalConfirm({
+        title: form.dataset.confirm,
+        icon: form.dataset.confirmIcon || 'question',
+        confirmText: form.dataset.confirmYes || 'Ya',
+        confirmColor: form.dataset.confirmColor || 'success'
+      }).then(function (r) {
+        if (r.isConfirmed) { form.dataset._confirmed = '1'; form.requestSubmit(); }
+      });
+    }
+  }, true);
+
+  document.addEventListener('click', function (e) {
+    const el = e.target.closest('[data-confirm-link]');
+    if (!el) return;
+    e.preventDefault();
+    sikalConfirm({
+      title: el.dataset.confirmLink,
+      icon: el.dataset.confirmIcon || 'question',
+      confirmText: el.dataset.confirmYes || 'Ya',
+      confirmColor: el.dataset.confirmColor || 'danger'
+    }).then(function (r) { if (r.isConfirmed) window.location.href = el.href; });
+  });
+</script>
+<script>
+  // ── Notifikasi in-text sebagai TOAST SweetAlert (tanpa tombol, auto-hilang 4 detik) ──
+  // Kategori: info | success | warning | danger/error
+  const _TOAST_MAP = {
+    success: { icon: 'success', color: SIKAL_COLORS.success },
+    danger:  { icon: 'error',   color: SIKAL_COLORS.danger  },
+    error:   { icon: 'error',   color: SIKAL_COLORS.danger  },
+    warning: { icon: 'warning', color: SIKAL_COLORS.warning },
+    info:    { icon: 'info',    color: SIKAL_COLORS.info    },
+  };
+  window.sikalToast = function (message, category) {
+    const m = _TOAST_MAP[category] || _TOAST_MAP.info;
+    Swal.fire({
+      toast: true,
+      position: 'top-end',
+      icon: m.icon,
+      iconColor: m.color,
+      title: message,
+      showConfirmButton: false,
+      timer: 4000,
+      timerProgressBar: true,
+      customClass: { popup: 'rounded-3' }
+    });
+  };
+
+  // Alias lama supaya pemanggilan showNotif(...) yang sudah ada tetap jalan
+  window.showNotif = function (message, category = 'info') { sikalToast(message, category); };
+
+  // Untuk notifikasi yang harus tetap tampil setelah halaman di-reload
+  window.showNotifAfterReload = function (message, category = 'info') {
+    sessionStorage.setItem('pendingNotif', JSON.stringify({ message, category }));
+  };
+
+  // Saat halaman dimuat: tampilkan flash messages (server) + notifikasi tertunda sebagai toast
+  document.addEventListener('DOMContentLoaded', function () {
+    const flashEl = document.getElementById('flash-data');
+    if (flashEl) {
+      try {
+        JSON.parse(flashEl.textContent).forEach(function (pair, i) {
+          setTimeout(function () { sikalToast(pair[1], pair[0]); }, i * 300);
+        });
+      } catch (e) {}
+    }
+    const pending = sessionStorage.getItem('pendingNotif');
+    if (pending) {
+      sessionStorage.removeItem('pendingNotif');
+      try { const n = JSON.parse(pending); sikalToast(n.message, n.category); } catch (e) {}
+    }
+  });
+</script>
+{% block extra_js %}{% endblock %}
+<script>
+  document.getElementById('sidebarToggle').addEventListener('click', function () {
+    const collapsed = document.getElementById('wrapper').classList.toggle('sidebar-collapsed');
+    // Simpan status agar tetap konsisten saat pindah menu (reload halaman)
+    localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+  });
+</script>
+
+<!-- ── Session Idle Timeout (15 menit) — peringatan via SweetAlert tanpa tombol ── -->
+<script>
+(function () {
+  const IDLE_MS    = 15 * 60 * 1000;  // 15 menit hingga logout
+  const WARN_MS    = 15 * 1000;       // peringatan 15 detik sebelum logout
+  const LOGOUT_URL = "{{ url_for('logout') }}";
+
+  let warnTimer, countdownIv, warningActive = false;
+
+  function resetTimers() {
+    clearTimeout(warnTimer);
+    if (warningActive) {
+      // Peringatan sedang tampil lalu ada aktivitas → tetap login
+      warningActive = false;
+      if (Swal.isVisible()) Swal.close();
+      // Perbarui sesi server (setara tombol "Tetap Login")
+      fetch(window.location.href, { method: 'GET', credentials: 'same-origin' });
+    }
+    warnTimer = setTimeout(showWarning, IDLE_MS - WARN_MS);
+  }
+
+  function showWarning() {
+    warningActive = true;
+    Swal.fire({
+      icon: 'warning',
+      iconColor: SIKAL_COLORS.warning,
+      title: 'Sesi Hampir Berakhir',
+      html: 'Logout otomatis dalam <b>' + (WARN_MS / 1000) + '</b> detik karena tidak ada aktivitas.<br>Gerakkan mouse atau tekan tombol untuk tetap masuk.',
+      width: '22rem',
+      showConfirmButton: false,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      timer: WARN_MS,
+      timerProgressBar: true,
+      customClass: { popup: 'rounded-3' },
+      didOpen: function () {
+        const b = Swal.getHtmlContainer().querySelector('b');
+        countdownIv = setInterval(function () {
+          const left = Swal.getTimerLeft();
+          if (left !== undefined && b) b.textContent = Math.max(1, Math.ceil(left / 1000));
+        }, 200);
+      },
+      willClose: function () { clearInterval(countdownIv); }
+    }).then(function (result) {
+      // Habis waktu (bukan ditutup oleh aktivitas) → logout
+      if (result.dismiss === Swal.DismissReason.timer) {
+        window.location.href = LOGOUT_URL;
+      }
+    });
+  }
+
+  // Reset timer pada setiap aktivitas pengguna
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(function (evt) {
+    document.addEventListener(evt, resetTimers, { passive: true });
+  });
+
+  // Mulai timer saat halaman dimuat
+  resetTimers();
+})();
+</script>
+</body>
+</html>

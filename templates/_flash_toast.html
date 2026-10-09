@@ -1,0 +1,38 @@
+<!-- Toast SweetAlert untuk flash message — dipakai halaman yang TIDAK extends base.html
+     (login, register, join, dll). Letakkan sebelum </body>. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+<style>
+  .swal2-popup         { padding: 1.5rem 1.25rem 1.25rem; }
+  .swal2-icon          { font-size: 0.58em; margin: 0.4em auto 0.9em; }
+  .swal2-title         { font-size: 1rem; font-weight: 500; color: #212529; padding: 0; line-height: 1.5; }
+  .swal2-html-container { font-size: 0.9rem; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+  window.SIKAL_COLORS = { danger: '#D53E4F', success: '#7B9163', warning: '#FED45C', primary: '#3288BD', info: '#3288BD' };
+  const _TOAST_MAP = {
+    success: { icon: 'success', color: SIKAL_COLORS.success },
+    danger:  { icon: 'error',   color: SIKAL_COLORS.danger  },
+    error:   { icon: 'error',   color: SIKAL_COLORS.danger  },
+    warning: { icon: 'warning', color: SIKAL_COLORS.warning },
+    info:    { icon: 'info',    color: SIKAL_COLORS.info    },
+  };
+  window.sikalToast = function (message, category) {
+    const m = _TOAST_MAP[category] || _TOAST_MAP.info;
+    Swal.fire({
+      toast: true, position: 'top-end',
+      icon: m.icon, iconColor: m.color, title: message,
+      showConfirmButton: false, timer: 4000, timerProgressBar: true,
+      customClass: { popup: 'rounded-3' }
+    });
+  };
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+  document.addEventListener('DOMContentLoaded', function () {
+    {% for cat, msg in messages %}
+    setTimeout(function () { sikalToast({{ msg|tojson }}, {{ cat|tojson }}); }, {{ loop.index0 * 300 }});
+    {% endfor %}
+  });
+    {% endif %}
+  {% endwith %}
+</script>
